@@ -37,12 +37,13 @@ Están en la carpeta [`/datos`](datos) de este repositorio. Descargá el repo co
 
 ## Para destacar (opcional, suma puntos)
 
-Elegí **al menos una**:
+Todas son opcionales. Agregá las que quieras, ninguna, o algo que ni se nos ocurrió:
 - Un **método de proyección más inteligente** que un promedio simple (que capte tendencias de crecimiento o ignore semanas atípicas).
 - Un **"chat con los datos":** un cuadro donde el usuario escribe una pregunta en español normal —por ejemplo *"¿qué sucursal está pidiendo demasiado queso esta semana?"*— y la herramienta le responde en texto, sin que tenga que leer tablas. Por dentro usa un modelo de IA conectado a los datos.
 - **Detección de órdenes raras** comparando una sucursal contra las demás (ej. una pide mucho más de un insumo, por cliente, que el resto).
 - **Organizar el pedido corregido por proveedor:** como a cada proveedor se le manda una orden aparte, agrupar la lista por proveedor para poder reenviarle a cada uno su parte directamente.
 - Que el usuario pueda **cargar o editar las órdenes desde la misma interfaz** (subir el archivo o cambiar cantidades) y ver las alertas actualizarse — acercándose a la visión final de la herramienta.
+- **Cualquier cosa que se te ocurra** que le haría la vida más fácil a la gerente de compras o que nos ayude a optimizar las compras. Si pensás en algo que nosotros no listamos acá, mejor todavía: eso es justo lo que buscamos.
 
 No necesitás usar Odoo. Pero en tu README o video, contanos **cómo conectarías esto a un sistema como Odoo** si tuvieras que llevarlo a producción.
 
@@ -50,7 +51,7 @@ No necesitás usar Odoo. Pero en tu README o video, contanos **cómo conectaría
 
 1. **Link a un repo de GitHub** con el código + un **README** (cómo correrlo y qué supuestos hiciste).
 2. **Video de 3–5 min** mostrándolo funcionar y explicando tu razonamiento (ver instrucciones abajo).
-3. *(Opcional)* Link a la app en vivo.
+3. **Link a la app en vivo** — tu dashboard publicado y funcionando, para que podamos abrirlo y usarlo. Se puede publicar gratis (Streamlit Community Cloud, Hugging Face Spaces, Vercel, Netlify, entre otras). **Probá el link en una ventana de incógnito antes de enviarlo.**
 4. Una explicación de **cómo usaste IA** para resolverlo.
 
 ### Cómo grabar y subir el video
