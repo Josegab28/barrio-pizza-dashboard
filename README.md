@@ -71,7 +71,7 @@ No necesitás usar Odoo. Pero en tu README o video, contanos **cómo conectaría
 
 - Usá el lenguaje y las herramientas que quieras, **incluida la IA** (Claude, ChatGPT, Copilot, lo que sea). **Usar IA suma — no lo escondas.** Lo que evaluamos es cómo la usás para construir.
 - **Todo el reto se puede completar con herramientas 100% gratuitas** — no hace falta pagar ninguna suscripción. Algunas que podés explorar: Streamlit, Gradio, Hugging Face Spaces, Vercel, Netlify, GitHub, Loom, y las IA que prefieras (Claude, ChatGPT, Gemini, Copilot). *Descubrir cuál te sirve para cada cosa es parte del reto.* (Tip: como estudiante calificás al GitHub Student Developer Pack, que suma varias herramientas gratis.)
-- **Fecha límite: sábado 8 de agosto, 11:59 p.m.** No se reciben entregas después.
+- **Fecha límite: domingo 9 de agosto, 11:59 p.m.** No se reciben entregas después.
 - **¿Dudas?** Escribí a **martin@barriopizza.com** — cualquier pregunta es bienvenida.
 
 ## Cómo lo evaluamos
