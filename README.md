@@ -1,82 +1,115 @@
-# Reto técnico — Práctica de IA · Barrio Pizza
+# Barrio · Centro de compras
 
-## El contexto
+Dashboard administrativo para revisar automáticamente las órdenes semanales de Barrio Pizza. Convierte los formatos de compra a su unidad base, proyecta el consumo, descuenta el inventario y señala qué debe corregirse antes de aprobar el pedido.
 
-Barrio Pizza es una cadena de pizzerías con 10 sucursales en Panamá. Cada semana, **cada sucursal arma su orden de compra de insumos**. A veces piden de más (plata inmovilizada y comida que se vence) y a veces de menos (se quedan sin producto en pleno servicio). Hoy esas órdenes se aprueban al ojo. Esto conlleva mucho tiempo que le tiene que dedicar la gerente de compras para evaluarlas y puede llevar a errores.
+## Qué incluye
 
-**Queremos una herramienta que las revise automáticamente.**
+- Resumen ejecutivo con riesgos de quiebre, sobrepedidos, formatos a ajustar y líneas correctas.
+- Mapa interactivo de las cuatro sucursales con un resumen al seleccionar cada marcador.
+- Alertas accionables con la cantidad pedida y la cantidad recomendada.
+- Simulador para editar cantidades o cargar una nueva orden CSV y recalcular todo al instante.
+- Pedido corregido agrupado por proveedor y exportable como CSV.
+- Asistente en español que responde preguntas directamente sobre los datos cargados.
+- Revisión explícita de calidad de datos: líneas omitidas, líneas sin inventario/histórico y semanas atípicas.
+- Diseño adaptable para computador, tableta y móvil.
 
-## Tu misión
+## Cómo correrlo
 
-Con los datos de **4 sucursales** que te damos, construí un **dashboard** —una herramienta visual— que revise las órdenes de compra de la semana y **muestre automáticamente las alertas**: *¿están pidiendo lo que realmente necesitan? ¿piden de más? ¿se olvidaron de algo?*
+Requiere Node.js 22.13 o superior.
 
-> **La visión (para que entiendas el norte):** en la vida real, la gerente de compras cargaría todas las órdenes de la semana en esta herramienta y esta le arrojaría las alertas al instante, sin tener que revisar producto por producto. No tenés que construir toda esa versión final — pero queremos ver esa idea reflejada en tu dashboard.
+```bash
+cd dashboard-app
+npm install
+npm run dev
+```
 
-## Los datos (4 archivos CSV)
+Abrir `http://localhost:3000`.
 
-Están en la carpeta [`/datos`](datos) de este repositorio. Descargá el repo completo (botón verde **Code → Download ZIP**) o cloná con git.
+Para validar la versión de producción:
 
-| Archivo | Qué contiene |
-|---|---|
-| `ingredientes.csv` | Catálogo: proveedor, unidad, **formato de compra** (ej. "Saco 25 kg") y si es perecedero |
-| `consumo_historico.csv` | Cuánto consumió cada sucursal de cada ingrediente en las **últimas 6 semanas** |
-| `inventario_actual.csv` | Stock actual de cada ingrediente por sucursal |
-| `orden_compra_semana.csv` | Lo que cada sucursal **está pidiendo** esta semana (en formatos: `3` = 3 sacos) |
+```bash
+cd dashboard-app
+npm run build
+```
 
-> **Ojo con las unidades:** el consumo y el inventario están en unidad base (kg, L, unidades), pero las órdenes están en **formatos**. Vas a tener que convertir.
+## Datos
 
-## Qué debe hacer tu herramienta (lo mínimo)
+La aplicación consume copias de los cuatro archivos de `/datos` desde `dashboard-app/public/datos`:
 
-1. **Proyectar** el consumo de la próxima semana de cada ingrediente, por sucursal, usando las 6 semanas de histórico.
-2. Calcular la **necesidad real** = consumo proyectado − inventario actual.
-3. **Comparar con la orden de compra** y generar **alertas claras y accionables**, en este estilo:
-   > *"ALERTA: \<sucursal\> está pidiendo \<cantidad\> \<unidad\> de \<ingrediente\> menos que lo proyectado → riesgo de quiebre."*
-4. **Mostrar todo en un dashboard** (obligatorio): una pantalla visual donde las alertas se vean de un vistazo. El usuario no debería tener que leer código ni tablas crudas para entender qué está mal. Pensalo como algo que la gerente de compras usaría, no como un archivo de salida.
+- `ingredientes.csv`
+- `consumo_historico.csv`
+- `inventario_actual.csv`
+- `orden_compra_semana.csv`
 
-> **Sobre el redondeo:** los insumos solo se compran en formatos completos (no existe medio saco). Un excedente **menor a un formato completo** es redondeo normal, no un sobre-pedido.
+El cargador de la interfaz reemplaza únicamente la orden semanal. Espera estas columnas:
 
-## Para destacar (opcional, suma puntos)
+```text
+sucursal,ingrediente_id,cantidad_formatos
+```
 
-Todas son opcionales. Agregá las que quieras, ninguna, o algo que ni se nos ocurrió:
-- Un **método de proyección más inteligente** que un promedio simple (que capte tendencias de crecimiento o ignore semanas atípicas).
-- Un **"chat con los datos":** un cuadro donde el usuario escribe una pregunta en español normal —por ejemplo *"¿qué sucursal está pidiendo demasiado queso esta semana?"*— y la herramienta le responde en texto, sin que tenga que leer tablas. Por dentro usa un modelo de IA conectado a los datos.
-- **Detección de órdenes raras** comparando una sucursal contra las demás (ej. una pide mucho más de un insumo, por cliente, que el resto).
-- **Organizar el pedido corregido por proveedor:** como a cada proveedor se le manda una orden aparte, agrupar la lista por proveedor para poder reenviarle a cada uno su parte directamente.
-- Que el usuario pueda **cargar o editar las órdenes desde la misma interfaz** (subir el archivo o cambiar cantidades) y ver las alertas actualizarse — acercándose a la visión final de la herramienta.
-- **Cualquier cosa que se te ocurra** que le haría la vida más fácil a la gerente de compras o que nos ayude a optimizar las compras. Si pensás en algo que nosotros no listamos acá, mejor todavía: eso es justo lo que buscamos.
+## Método de proyección
 
-No necesitás usar Odoo. Pero en tu README o video, contanos **cómo conectarías esto a un sistema como Odoo** si tuvieras que llevarlo a producción.
+Para cada combinación sucursal–ingrediente:
 
-## Qué entregar (por el formulario)
+1. Se revisan las seis semanas históricas.
+2. Se limitan picos aislados usando la mediana y la desviación absoluta mediana (MAD).
+3. Se calcula un promedio ponderado que da más importancia a las semanas recientes.
+4. Se añade una tendencia lineal acotada a ±15% para evitar proyecciones extremas.
+5. `necesidad real = max(0, consumo proyectado − inventario actual)`.
+6. `formatos recomendados = ceil(necesidad real / unidad_base_por_formato)`.
 
-1. **Link a un repo de GitHub** con el código + un **README** (cómo correrlo y qué supuestos hiciste).
-2. **Video de 3–5 min** mostrándolo funcionar y explicando tu razonamiento (ver instrucciones abajo).
-3. **Link a la app en vivo** — tu dashboard publicado y funcionando, para que podamos abrirlo y usarlo. Se puede publicar gratis (Streamlit Community Cloud, Hugging Face Spaces, Vercel, Netlify, entre otras). **Probá el link en una ventana de incógnito antes de enviarlo.**
-4. Una explicación de **cómo usaste IA** para resolverlo.
+Una orden genera riesgo de quiebre cuando su equivalente en unidad base no cubre la necesidad. Solo genera sobrepedido cuando supera la cantidad de formatos recomendada; el excedente menor a un formato completo se considera redondeo normal.
 
-### Cómo grabar y subir el video
+## Hallazgos de calidad de datos
 
-**Qué mostrar:** un recorrido por tu dashboard funcionando + tu razonamiento (por qué proyectaste el consumo así, cómo manejaste los casos raros). No hace falta que salgas en cámara; con tu voz y la pantalla basta.
+Los archivos tienen catálogo, histórico e inventario completos para 88 combinaciones (4 sucursales × 22 ingredientes), pero la orden contiene:
 
-**Cómo grabarlo** (elegí la opción que te sea más fácil, todas gratis):
-- **Loom** (loom.com) — la más simple: graba pantalla + voz y te genera el link para compartir automáticamente. **Recomendada.**
-- **Windows:** `Win + G` (Xbox Game Bar) graba la pantalla.
-- **Otras:** OBS Studio, una reunión de Zoom con vos solo, o el celular grabando la pantalla.
+- una línea esperada ausente: `Brisas del Golf · mozzarella`; se interpreta como cero para detectar el posible olvido;
+- una línea sin inventario ni histórico: `Costa del Este · aji_chombo`; se muestra como dato sin respaldo y no se recomienda automáticamente.
 
-**Cómo compartir el link (¡lo más importante!):**
-- Con Loom el link ya queda listo.
-- Si grabás un archivo, subilo a **YouTube como "No listado"**, o a **Google Drive / OneDrive** con la opción "cualquiera con el link puede ver".
-- **Probá tu link en una ventana de incógnito antes de enviarlo.** Si te pide permiso o iniciar sesión, no vamos a poder verlo y tu entrega quedará incompleta.
+No se encontraron claves duplicadas, valores vacíos ni cantidades negativas. La interfaz expone ambos casos para no confundir “dato faltante” con “consumo cero”.
 
-## Reglas del juego
+## Chat con los datos
 
-- Usá el lenguaje y las herramientas que quieras, **incluida la IA** (Claude, ChatGPT, Copilot, lo que sea). **Usar IA suma — no lo escondas.** Lo que evaluamos es cómo la usás para construir.
-- **Todo el reto se puede completar con herramientas 100% gratuitas** — no hace falta pagar ninguna suscripción. Algunas que podés explorar: Streamlit, Gradio, Hugging Face Spaces, Vercel, Netlify, GitHub, Loom, y las IA que prefieras (Claude, ChatGPT, Gemini, Copilot). *Descubrir cuál te sirve para cada cosa es parte del reto.* (Tip: como estudiante calificás al GitHub Student Developer Pack, que suma varias herramientas gratis.)
-- **Fecha límite: domingo 9 de agosto, 11:59 p.m.** No se reciben entregas después.
-- **¿Dudas?** Escribí a **martin@barriopizza.com** — cualquier pregunta es bienvenida.
+El prototipo incluye un intérprete local y determinístico para preguntas frecuentes como:
 
-## Cómo lo evaluamos
+- “¿Dónde hay mayor riesgo de quiebre?”
+- “¿Qué sucursal está pidiendo demasiado?”
+- “¿Dónde falta mozzarella?”
+- “Resume el pedido por proveedor.”
 
-Que **funcione** y detecte bien los problemas · tu manejo de las **unidades** y de **datos incompletos** · qué tan bien **usaste la IA** · tu **razonamiento** · y la **claridad** con que lo explicás.
+Esta decisión permite que la demo funcione sin claves ni servicios pagados. En producción, el mismo contexto calculado se enviaría a un modelo de lenguaje mediante una función de consulta controlada; el modelo redactaría la respuesta, pero los números seguirían viniendo del motor de reglas para evitar alucinaciones.
 
-> No buscamos perfección, ni un sistema terminado, ni que seas un programador experto. Buscamos ver tu **razonamiento y tu estructura**: que construyas algo que funcione y que pienses como alguien que resuelve problemas de un negocio real. Éxitos.
+## Supuestos
+
+- La orden corresponde a una sola semana futura (semana 7).
+- Inventario y consumo usan la unidad base definida en el catálogo.
+- `cantidad_formatos` es un entero no negativo.
+- Las coordenadas del mapa son aproximadas y se usan solo para la experiencia visual.
+- No se calcula impacto monetario porque el reto no incluye costos unitarios.
+- La proyección se conserva deliberadamente explicable para que compras pueda auditarla.
+
+## Cómo lo conectaría con Odoo
+
+1. Leer productos, empaques, inventario por ubicación y borradores de compra mediante la API de Odoo.
+2. Mapear `ingrediente_id` a `product.product` y cada sucursal a su `stock.location`.
+3. Ejecutar la proyección en un servicio programado al cierre de cada semana.
+4. Guardar recomendación, alerta y explicación en una tabla auditable.
+5. Permitir que compras apruebe cambios en el dashboard y, solo después, actualizar o crear los `purchase.order` separados por proveedor.
+6. Mantener permisos, registro de quién aprobó cada ajuste y alertas de datos incompletos.
+
+## Uso de IA durante el desarrollo
+
+La IA se utilizó como copiloto para estructurar el problema, comparar alternativas de proyección, implementar la aplicación, detectar casos de calidad de datos, revisar la conversión de unidades y preparar pruebas. Las decisiones de negocio —redondeo por formato, tratamiento de faltantes y límites de la tendencia— quedaron explícitas y verificables en el código y en la interfaz.
+
+## Estructura
+
+```text
+reto-practicante-ia/
+├── datos/                    # CSV originales del reto
+├── dashboard-app/
+│   ├── app/                  # interfaz, cálculos y mapa
+│   ├── public/datos/         # datos usados por la demo
+│   └── public/og.png         # tarjeta para compartir la app
+└── docs/video-guion.md       # guía sugerida para el video de entrega
+```
