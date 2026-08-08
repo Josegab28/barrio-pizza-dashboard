@@ -92,7 +92,7 @@ Controles de uso incluidos:
 - máximo 280 caracteres por pregunta;
 - máximo 8 consultas con IA por sesión del navegador;
 - máximo 5 solicitudes por minuto e IP como protección de primera línea;
-- respuesta limitada a 220 tokens y 20 segundos;
+- respuesta limitada a 220 tokens y 35 segundos;
 - `store: false`, para no guardar la interacción en Gemini;
 - contexto máximo de 14.000 caracteres y prompt que prohíbe inventar cifras.
 
