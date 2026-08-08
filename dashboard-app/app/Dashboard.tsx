@@ -712,7 +712,7 @@ export function Dashboard() {
                 <div key={index} className={`message ${message.role}`}>
                   {message.text}
                   {message.role === "assistant" && message.source && (
-                    <small>{message.source === "ai" ? "Respuesta con IA" : "Respaldo local"}</small>
+                    <small>{message.source === "ai" ? "Respuesta con Gemini" : "Respaldo local"}</small>
                   )}
                 </div>
               ))}
@@ -727,7 +727,7 @@ export function Dashboard() {
               <input maxLength={280} disabled={chatLoading} value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ej. ¿dónde falta mozzarella?" aria-label="Pregunta sobre los datos" />
               <button disabled={chatLoading} aria-label="Enviar pregunta">↑</button>
             </form>
-            <p className="assistant-note">IA limitada a los datos cargados · respaldo local automático.</p>
+            <p className="assistant-note">Gemini limitado a los datos cargados · respaldo local automático.</p>
           </aside>
         </div>
       </section>

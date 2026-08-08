@@ -14,7 +14,7 @@ async function render(path = "/", init = {}) {
   );
 }
 
-test("keeps the OpenAI key on the server and falls back safely when it is absent", async () => {
+test("keeps the Gemini key on the server and falls back safely when it is absent", async () => {
   const response = await render("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -61,12 +61,14 @@ test("keeps purchasing logic, AI guardrails, PDF export, data and social asset i
   assert.match(dashboard, /downloadOrderPdf/);
   assert.match(dashboard, /buildChatContext/);
   assert.match(chatRoute, /store: false/);
+  assert.match(chatRoute, /generativelanguage\.googleapis\.com\/v1\/interactions/);
   assert.match(chatRoute, /max_output_tokens: 220/);
+  assert.match(chatRoute, /thinking_level: "minimal"/);
   assert.match(chatRoute, /MAX_REQUESTS_PER_MINUTE = 5/);
   assert.match(pdfBuilder, /Orden de compra corregida/);
   assert.match(pdfBuilder, /Página \$\{page\} de \$\{pages\}/);
   assert.match(packageJson, /jspdf-autotable/);
-  assert.match(envExample, /OPENAI_API_KEY=/);
+  assert.match(envExample, /GEMINI_API_KEY=/);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   assert.equal(ingredients.trim().split(/\r?\n/).length, 23);
   assert.equal(history.trim().split(/\r?\n/).length, 529);

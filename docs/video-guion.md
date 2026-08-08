@@ -27,7 +27,7 @@ Abrir “Datos y edición”, cambiar una cantidad y mostrar cómo cambia el est
 
 ## 3:00–3:40 · Chat y proveedores
 
-Preguntar “¿Dónde falta mozzarella?” y “¿Qué sucursal pide demasiado?”. Explicar que la IA recibe únicamente el contexto calculado y que existe un respaldo local si la API no está disponible. Luego abrir “Pedido corregido”, mostrar la agrupación por proveedor y descargar el PDF general o el de un proveedor.
+Preguntar “¿Dónde falta mozzarella?” y “¿Qué sucursal pide demasiado?”. Explicar que Gemini recibe únicamente el contexto calculado y que existe un respaldo local si la API no está disponible. Luego abrir “Pedido corregido”, mostrar la agrupación por proveedor y descargar el PDF general o el de un proveedor.
 
 ## 3:40–4:20 · Producción
 
