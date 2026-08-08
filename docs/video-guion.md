@@ -27,11 +27,11 @@ Abrir “Datos y edición”, cambiar una cantidad y mostrar cómo cambia el est
 
 ## 3:00–3:40 · Chat y proveedores
 
-Preguntar “¿Dónde falta mozzarella?” y “¿Qué sucursal pide demasiado?”. Luego abrir “Pedido corregido” y mostrar la agrupación por proveedor y la descarga del CSV.
+Preguntar “¿Dónde falta mozzarella?” y “¿Qué sucursal pide demasiado?”. Explicar que la IA recibe únicamente el contexto calculado y que existe un respaldo local si la API no está disponible. Luego abrir “Pedido corregido”, mostrar la agrupación por proveedor y descargar el PDF general o el de un proveedor.
 
 ## 3:40–4:20 · Producción
 
-Cerrar explicando que una integración con Odoo leería inventario y borradores de compra, dejaría a la gerente aprobar las recomendaciones y solo después actualizaría las órdenes por proveedor. Indicar que el prototipo usa un chat local verificable y que un modelo de lenguaje podría redactar respuestas manteniendo los cálculos en el motor de reglas.
+Cerrar explicando que una integración con Odoo leería inventario y borradores de compra, dejaría a la gerente aprobar las recomendaciones y solo después actualizaría las órdenes por proveedor. Indicar que el modelo de lenguaje redacta respuestas, mientras los cálculos permanecen en el motor de reglas; mencionar también los límites de consultas, longitud y tiempo para controlar el costo.
 
 ## Cierre
 

@@ -8,8 +8,8 @@ Dashboard administrativo para revisar automáticamente las órdenes semanales de
 - Mapa interactivo de las cuatro sucursales con un resumen al seleccionar cada marcador.
 - Alertas accionables con la cantidad pedida y la cantidad recomendada.
 - Simulador para editar cantidades o cargar una nueva orden CSV y recalcular todo al instante.
-- Pedido corregido agrupado por proveedor y exportable como CSV.
-- Asistente en español que responde preguntas directamente sobre los datos cargados.
+- Pedido corregido agrupado por proveedor y exportable como un PDF listo para revisar o enviar; el CSV se conserva como respaldo técnico.
+- Asistente en español conectado a la API de OpenAI, limitado a los datos calculados por el dashboard y con respaldo local automático.
 - Revisión explícita de calidad de datos: líneas omitidas, líneas sin inventario/histórico y semanas atípicas.
 - Diseño adaptable para computador, tableta y móvil.
 
@@ -24,6 +24,15 @@ npm run dev
 ```
 
 Abrir `http://localhost:3000`.
+
+Para activar la IA real, crear `dashboard-app/.env.local` a partir de `.env.example` y colocar la clave únicamente allí:
+
+```text
+OPENAI_API_KEY=tu_clave
+OPENAI_MODEL=gpt-5-mini
+```
+
+La clave nunca se envía al navegador ni debe subirse a GitHub. En la versión publicada se configura como variable secreta del sitio.
 
 Para validar la versión de producción:
 
@@ -71,14 +80,27 @@ No se encontraron claves duplicadas, valores vacíos ni cantidades negativas. La
 
 ## Chat con los datos
 
-El prototipo incluye un intérprete local y determinístico para preguntas frecuentes como:
+El chat envía a OpenAI un contexto compacto construido por el motor de reglas: resumen global, estado por sucursal, totales por proveedor y hasta 36 líneas relevantes. El modelo redacta la explicación, pero no calcula ni sustituye las recomendaciones. Si la API no está configurada, excede el límite o no responde, el dashboard usa automáticamente un intérprete local para preguntas frecuentes como:
 
 - “¿Dónde hay mayor riesgo de quiebre?”
 - “¿Qué sucursal está pidiendo demasiado?”
 - “¿Dónde falta mozzarella?”
 - “Resume el pedido por proveedor.”
 
-Esta decisión permite que la demo funcione sin claves ni servicios pagados. En producción, el mismo contexto calculado se enviaría a un modelo de lenguaje mediante una función de consulta controlada; el modelo redactaría la respuesta, pero los números seguirían viniendo del motor de reglas para evitar alucinaciones.
+Controles de uso incluidos:
+
+- máximo 280 caracteres por pregunta;
+- máximo 8 consultas con IA por sesión del navegador;
+- máximo 5 solicitudes por minuto e IP como protección de primera línea;
+- respuesta limitada a 220 tokens y 20 segundos;
+- `store: false`, para no guardar la respuesta en OpenAI;
+- contexto máximo de 14.000 caracteres y prompt que prohíbe inventar cifras.
+
+El límite del servidor es deliberadamente liviano y complementa —no reemplaza— los presupuestos y límites de uso configurados en la cuenta de OpenAI.
+
+## Orden de compra en PDF
+
+La descarga principal genera un documento con identidad visual de Barrio Pizza que incluye fecha, alcance, resumen de proveedores, líneas a comprar, formatos totales y ajustes. El detalle se separa por proveedor y muestra ingrediente, sucursal, formato, cantidad original, recomendación y ajuste. También se puede descargar un PDF individual desde cada tarjeta de proveedor.
 
 ## Supuestos
 
@@ -109,6 +131,8 @@ reto-practicante-ia/
 ├── datos/                    # CSV originales del reto
 ├── dashboard-app/
 │   ├── app/                  # interfaz, cálculos y mapa
+│   ├── app/api/chat/         # conexión segura con OpenAI
+│   ├── app/lib/orderPdf.ts   # generador de órdenes PDF
 │   ├── public/datos/         # datos usados por la demo
 │   └── public/og.png         # tarjeta para compartir la app
 └── docs/video-guion.md       # guía sugerida para el video de entrega

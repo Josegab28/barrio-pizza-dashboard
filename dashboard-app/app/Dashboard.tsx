@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BranchMap, type BranchMapStat } from "./BranchMap";
+import { downloadOrderPdf } from "./lib/orderPdf";
 
 type Ingredient = {
   ingrediente_id: string;
@@ -51,7 +52,7 @@ type Line = {
 };
 
 type View = "overview" | "orders" | "data" | "method";
-type ChatMessage = { role: "assistant" | "user"; text: string };
+type ChatMessage = { role: "assistant" | "user"; text: string; source?: "ai" | "local" };
 
 const navItems: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Resumen", icon: "◫" },
@@ -140,6 +141,7 @@ export function Dashboard() {
   const [loadError, setLoadError] = useState("");
   const [toast, setToast] = useState("");
   const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -147,6 +149,7 @@ export function Dashboard() {
     },
   ]);
   const uploadRef = useRef<HTMLInputElement>(null);
+  const aiRequestCount = useRef(0);
 
   useEffect(() => {
     Promise.all(
@@ -318,7 +321,7 @@ export function Dashboard() {
     URL.revokeObjectURL(link.href);
   }
 
-  function askData(question: string) {
+  function localDataAnswer(question: string) {
     const query = plain(question);
     const mentionedBranch = branches.find((branch) => query.includes(plain(branch)));
     const mentionedIngredient = ingredients.find((ingredient) => query.includes(plain(ingredient.nombre)));
@@ -358,13 +361,112 @@ export function Dashboard() {
     } else {
       answer = `Esta semana hay ${lines.filter((line) => line.status === "critical").length} riesgos de quiebre y ${lines.filter((line) => line.status === "warning").length} sobrepedidos. Prueba: “¿dónde falta mozzarella?” o “¿qué sucursal pide demasiado?”.`;
     }
-    setMessages((current) => [...current, { role: "user", text: question }, { role: "assistant", text: answer }]);
+    return answer;
+  }
+
+  function buildChatContext(question: string) {
+    const query = plain(question);
+    const mentionedBranch = branches.find((branch) => query.includes(plain(branch)));
+    const mentionedIngredient = ingredients.find((ingredient) => query.includes(plain(ingredient.nombre)));
+    const relevant = lines
+      .filter((line) => {
+        if (mentionedBranch && line.branch !== mentionedBranch) return false;
+        if (mentionedIngredient && line.ingredientId !== mentionedIngredient.ingrediente_id) return false;
+        return mentionedBranch || mentionedIngredient ? true : line.status !== "ok";
+      })
+      .sort((a, b) => {
+        if (a.status !== b.status) return a.status === "critical" ? -1 : 1;
+        return Math.abs(b.deltaBase) - Math.abs(a.deltaBase);
+      })
+      .slice(0, 36)
+      .map((line) => ({
+        sucursal: line.branch,
+        ingrediente: line.ingredient,
+        proveedor: line.supplier,
+        formato: line.pack,
+        unidad: line.unit,
+        proyeccion: Number(line.projected.toFixed(1)),
+        stock: line.stock,
+        necesidad: Number(line.need.toFixed(1)),
+        ordenado_formatos: line.ordered,
+        recomendado_formatos: line.recommended,
+        diferencia_unidad_base: Number(line.deltaBase.toFixed(1)),
+        estado: line.status === "critical" ? "quiebre" : line.status === "warning" ? "sobrepedido" : "correcto",
+      }));
+
+    const supplierSummary = [...new Set(lines.map((line) => line.supplier))]
+      .map((supplier) => ({
+        proveedor: supplier,
+        formatos_recomendados: lines
+          .filter((line) => line.supplier === supplier)
+          .reduce((sum, line) => sum + line.recommended, 0),
+        lineas: lines.filter((line) => line.supplier === supplier && line.recommended > 0).length,
+      }))
+      .sort((a, b) => b.formatos_recomendados - a.formatos_recomendados);
+
+    return JSON.stringify({
+      periodo: "semana 7",
+      resumen_global: {
+        riesgos_quiebre: lines.filter((line) => line.status === "critical").length,
+        sobrepedidos: lines.filter((line) => line.status === "warning").length,
+        lineas_correctas: lines.filter((line) => line.status === "ok").length,
+      },
+      sucursales: branchStats,
+      proveedores: supplierSummary,
+      calidad_datos: {
+        lineas_omitidas_en_orden: dataGaps.missingOrders.length,
+        lineas_sin_inventario_historico: dataGaps.orphanOrders.length,
+      },
+      detalle_relevante: relevant,
+      nota: "Las cifras provienen del motor de reglas; la IA solo debe explicarlas.",
+    });
+  }
+
+  async function askData(question: string) {
+    if (chatLoading) return;
+    const cleanQuestion = question.trim().slice(0, 280);
+    if (!cleanQuestion) return;
+
+    setMessages((current) => [...current, { role: "user", text: cleanQuestion }]);
+    setChatLoading(true);
+
+    const fallback = () => {
+      const answer = localDataAnswer(cleanQuestion);
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: answer, source: "local" },
+      ]);
+    };
+
+    try {
+      if (aiRequestCount.current >= 8) {
+        fallback();
+        setToast("Se alcanzó el límite de 8 consultas con IA de esta sesión. El respaldo local sigue activo.");
+        return;
+      }
+      aiRequestCount.current += 1;
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ question: cleanQuestion, context: buildChatContext(cleanQuestion) }),
+      });
+      const payload = (await response.json()) as { answer?: string; code?: string };
+      if (!response.ok || !payload.answer) throw new Error(payload.code ?? "chat_error");
+      setMessages((current) => [
+        ...current,
+        { role: "assistant", text: payload.answer!, source: "ai" },
+      ]);
+    } catch {
+      fallback();
+    } finally {
+      setChatLoading(false);
+    }
   }
 
   function submitChat(event: React.FormEvent) {
     event.preventDefault();
     if (!chatInput.trim()) return;
-    askData(chatInput.trim());
+    void askData(chatInput.trim());
     setChatInput("");
   }
 
@@ -426,7 +528,12 @@ export function Dashboard() {
             </label>
             <input ref={uploadRef} type="file" accept=".csv,text/csv" hidden onChange={handleUpload} />
             <button className="secondary-button" onClick={() => uploadRef.current?.click()}>↑ Cargar orden</button>
-            <button className="primary-button" onClick={downloadCorrectedOrder}>Descargar corregida</button>
+            <button
+              className="primary-button"
+              onClick={() => downloadOrderPdf(visibleLines, { branchLabel: selectedTitle })}
+            >
+              ↓ Descargar PDF
+            </button>
           </div>
         </header>
 
@@ -532,7 +639,10 @@ export function Dashboard() {
 
             {view === "orders" && (
               <section className="orders-view">
-                <div className="view-intro"><span className="section-kicker">LISTO PARA ENVIAR</span><h2>Pedido corregido por proveedor</h2><p>Cantidades expresadas en formatos completos, después de descontar el inventario disponible.</p></div>
+                <div className="view-intro view-intro-row">
+                  <div><span className="section-kicker">LISTO PARA ENVIAR</span><h2>Pedido corregido por proveedor</h2><p>Cantidades expresadas en formatos completos, después de descontar el inventario disponible.</p></div>
+                  <button className="secondary-button" onClick={downloadCorrectedOrder}>Descargar CSV</button>
+                </div>
                 <div className="supplier-grid">
                   {supplierGroups.map(([supplier, supplierLines]) => (
                     <article className="supplier-card" key={supplier}>
@@ -540,6 +650,12 @@ export function Dashboard() {
                       <div className="supplier-lines">
                         {supplierLines.map((line) => <div key={`${line.branch}-${line.ingredientId}`}><span><b>{line.ingredient}</b><small>{line.branch} · {line.pack}</small></span><strong>{line.recommended}</strong></div>)}
                       </div>
+                      <button
+                        className="supplier-download"
+                        onClick={() => downloadOrderPdf(supplierLines, { branchLabel: selectedTitle, supplier })}
+                      >
+                        Descargar orden de {supplier} en PDF ↓
+                      </button>
                     </article>
                   ))}
                 </div>
@@ -590,20 +706,28 @@ export function Dashboard() {
           </div>
 
           <aside className="chat-panel">
-            <div className="chat-head"><div className="assistant-avatar">✦</div><div><span>ASISTENTE DE DATOS</span><h3>Pregúntale a Barrio</h3></div><i /></div>
+            <div className="chat-head"><div className="assistant-avatar">✦</div><div><span>ASISTENTE DE DATOS · IA</span><h3>Pregúntale a Barrio</h3></div><i className={chatLoading ? "thinking" : ""} /></div>
             <div className="chat-messages" aria-live="polite">
-              {messages.slice(-6).map((message, index) => <div key={index} className={`message ${message.role}`}>{message.text}</div>)}
+              {messages.slice(-6).map((message, index) => (
+                <div key={index} className={`message ${message.role}`}>
+                  {message.text}
+                  {message.role === "assistant" && message.source && (
+                    <small>{message.source === "ai" ? "Respuesta con IA" : "Respaldo local"}</small>
+                  )}
+                </div>
+              ))}
+              {chatLoading && <div className="message assistant typing"><span /><span /><span /></div>}
             </div>
             <div className="prompt-chips">
-              <button onClick={() => askData("¿Dónde hay mayor riesgo de quiebre?")}>Mayor riesgo</button>
-              <button onClick={() => askData("¿Qué sucursal pide demasiado?")}>Sobrepedidos</button>
-              <button onClick={() => askData("Resume el pedido por proveedor")}>Proveedores</button>
+              <button disabled={chatLoading} onClick={() => void askData("¿Dónde hay mayor riesgo de quiebre?")}>Mayor riesgo</button>
+              <button disabled={chatLoading} onClick={() => void askData("¿Qué sucursal pide demasiado?")}>Sobrepedidos</button>
+              <button disabled={chatLoading} onClick={() => void askData("Resume el pedido por proveedor")}>Proveedores</button>
             </div>
             <form className="chat-form" onSubmit={submitChat}>
-              <input value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ej. ¿dónde falta mozzarella?" aria-label="Pregunta sobre los datos" />
-              <button aria-label="Enviar pregunta">↑</button>
+              <input maxLength={280} disabled={chatLoading} value={chatInput} onChange={(event) => setChatInput(event.target.value)} placeholder="Ej. ¿dónde falta mozzarella?" aria-label="Pregunta sobre los datos" />
+              <button disabled={chatLoading} aria-label="Enviar pregunta">↑</button>
             </form>
-            <p className="assistant-note">Respuestas calculadas sobre los 4 CSV cargados.</p>
+            <p className="assistant-note">IA limitada a los datos cargados · respaldo local automático.</p>
           </aside>
         </div>
       </section>
