@@ -127,6 +127,8 @@ function projectNextWeek(values: number[]) {
 
 const number = new Intl.NumberFormat("es-PA", { maximumFractionDigits: 1 });
 const plain = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const DEMO_EMAIL = "admin@barriopizza.com";
+const DEMO_PASSWORD = "barrio2026";
 
 export function Dashboard() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -141,6 +143,11 @@ export function Dashboard() {
   const [toast, setToast] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
+  const [demoAccess, setDemoAccess] = useState(false);
+  const [demoAccessReady, setDemoAccessReady] = useState(false);
+  const [loginEmail, setLoginEmail] = useState(DEMO_EMAIL);
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -149,6 +156,11 @@ export function Dashboard() {
   ]);
   const uploadRef = useRef<HTMLInputElement>(null);
   const aiRequestCount = useRef(0);
+
+  useEffect(() => {
+    setDemoAccess(sessionStorage.getItem("barrio-demo-access") === "active");
+    setDemoAccessReady(true);
+  }, []);
 
   useEffect(() => {
     Promise.all(
@@ -496,7 +508,24 @@ export function Dashboard() {
     setChatInput("");
   }
 
-  if (loading) {
+  function submitDemoLogin(event: React.FormEvent) {
+    event.preventDefault();
+    if (plain(loginEmail.trim()) !== DEMO_EMAIL || loginPassword !== DEMO_PASSWORD) {
+      setLoginError("Revisa las credenciales de demostración.");
+      return;
+    }
+    sessionStorage.setItem("barrio-demo-access", "active");
+    setLoginError("");
+    setDemoAccess(true);
+  }
+
+  function closeDemoSession() {
+    sessionStorage.removeItem("barrio-demo-access");
+    setLoginPassword("");
+    setDemoAccess(false);
+  }
+
+  if (loading || !demoAccessReady) {
     return (
       <main className="loading-screen">
         <div className="pizza-loader">B</div>
@@ -511,6 +540,60 @@ export function Dashboard() {
         <div className="pizza-loader">!</div>
         <h1>No pudimos cargar los datos</h1>
         <p>{loadError}</p>
+      </main>
+    );
+  }
+
+  if (!demoAccess) {
+    return (
+      <main className="demo-login-shell">
+        <section className="demo-login-brand" aria-label="Barrio Pizza Centro de compras">
+          <div className="demo-login-logo">B</div>
+          <span>CENTRO DE COMPRAS</span>
+          <h1>Decisiones de compra más claras para cada sucursal.</h1>
+          <p>Inventario, proyección y órdenes semanales en un solo lugar.</p>
+          <div className="demo-login-features">
+            <span>✓ Riesgos de quiebre</span>
+            <span>✓ Pedido por proveedor</span>
+            <span>✓ Asistente con Gemini</span>
+          </div>
+        </section>
+        <section className="demo-login-panel">
+          <form className="demo-login-card" onSubmit={submitDemoLogin}>
+            <span className="demo-pill">ACCESO DE DEMOSTRACIÓN</span>
+            <h2>Bienvenido</h2>
+            <p>Ingresa con las credenciales del entorno de prueba.</p>
+            <label>
+              <span>Correo</span>
+              <input
+                type="email"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+                autoComplete="username"
+                required
+              />
+            </label>
+            <label>
+              <span>Contraseña</span>
+              <input
+                type="password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                autoComplete="current-password"
+                placeholder="Ingresa la contraseña demo"
+                required
+              />
+            </label>
+            {loginError && <div className="demo-login-error" role="alert">{loginError}</div>}
+            <button type="submit">Entrar al dashboard →</button>
+            <div className="demo-credentials">
+              <small>CREDENCIALES DEMO</small>
+              <span>{DEMO_EMAIL}</span>
+              <span>Contraseña: {DEMO_PASSWORD}</span>
+            </div>
+            <p className="demo-disclaimer">Acceso visual para fines de demostración. No reemplaza un sistema de autenticación de producción.</p>
+          </form>
+        </section>
       </main>
     );
   }
@@ -535,7 +618,10 @@ export function Dashboard() {
             </button>
           ))}
         </nav>
-        <div className="sidebar-status"><i /><span>Datos cargados</span></div>
+        <div className="sidebar-footer">
+          <div className="sidebar-status"><i /><span>Datos cargados</span></div>
+          <button className="demo-logout" onClick={closeDemoSession} title="Cerrar sesión demo" aria-label="Cerrar sesión demo">↪</button>
+        </div>
       </aside>
 
       <section className="workspace">

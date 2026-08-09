@@ -63,6 +63,9 @@ test("keeps purchasing logic, AI guardrails, PDF export, data and social asset i
   assert.match(branchMap, /STOCK ACTUAL/);
   assert.match(dashboard, /downloadOrderPdf/);
   assert.match(dashboard, /buildChatContext/);
+  assert.match(dashboard, /ACCESO DE DEMOSTRACIÓN/);
+  assert.match(dashboard, /barrio-demo-access/);
+  assert.match(dashboard, /Cerrar sesión demo/);
   assert.doesNotMatch(dashboard, /Cómo se toma cada decisión/);
   assert.doesNotMatch(dashboard, /label: "Método"/);
   assert.match(dashboard, /if \(!exists\)/);

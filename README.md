@@ -12,6 +12,7 @@ Dashboard administrativo para revisar automáticamente las órdenes semanales de
 - Asistente en español conectado a la API de Gemini, limitado a los datos calculados por el dashboard y con respaldo local automático.
 - Revisión explícita de calidad de datos: líneas omitidas, líneas sin inventario/histórico y semanas atípicas.
 - Diseño adaptable para computador, tableta y móvil.
+- Pantalla de acceso visual para la demostración, con sesión temporal por pestaña y cierre de sesión; no sustituye autenticación de producción.
 
 ## Cómo correrlo
 
