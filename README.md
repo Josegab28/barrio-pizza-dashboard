@@ -137,5 +137,4 @@ reto-practicante-ia/
 │   ├── app/lib/orderPdf.ts   # generador de órdenes PDF
 │   ├── public/datos/         # datos usados por la demo
 │   └── public/og.png         # tarjeta para compartir la app
-└── docs/video-guion.md       # guía sugerida para el video de entrega
 ```
