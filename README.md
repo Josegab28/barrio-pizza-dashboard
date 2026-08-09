@@ -25,13 +25,6 @@ npm run dev
 
 Abrir `http://localhost:3000`.
 
-Para activar la IA real, crear `dashboard-app/.env.local` a partir de `.env.example` y colocar la clave únicamente allí:
-
-```text
-GEMINI_API_KEY=tu_clave
-GEMINI_MODEL=gemini-3.5-flash-lite
-```
-
 La clave nunca se envía al navegador ni debe subirse a GitHub. En la versión publicada se configura como variable secreta del sitio.
 
 Para validar la versión de producción:
