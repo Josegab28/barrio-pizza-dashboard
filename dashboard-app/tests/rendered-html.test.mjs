@@ -60,6 +60,8 @@ test("keeps purchasing logic, AI guardrails, PDF export, data and social asset i
   assert.match(dashboard, /<BranchMap/);
   assert.match(dashboard, /downloadOrderPdf/);
   assert.match(dashboard, /buildChatContext/);
+  assert.doesNotMatch(dashboard, /Cómo se toma cada decisión/);
+  assert.doesNotMatch(dashboard, /label: "Método"/);
   assert.match(dashboard, /if \(!exists\)/);
   assert.match(dashboard, /ingrediente_id: ingredientId/);
   assert.match(dashboard, /slice\(0, 18\)/);

@@ -51,14 +51,13 @@ type Line = {
   status: "critical" | "warning" | "ok";
 };
 
-type View = "overview" | "orders" | "data" | "method";
+type View = "overview" | "orders" | "data";
 type ChatMessage = { role: "assistant" | "user"; text: string; source?: "ai" | "local" };
 
 const navItems: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Resumen", icon: "◫" },
   { id: "orders", label: "Pedido corregido", icon: "▤" },
   { id: "data", label: "Datos y edición", icon: "⌁" },
-  { id: "method", label: "Método", icon: "◎" },
 ];
 
 function parseCsv<T>(text: string): T[] {
@@ -709,18 +708,6 @@ export function Dashboard() {
               </section>
             )}
 
-            {view === "method" && (
-              <section className="method-view">
-                <div className="view-intro"><span className="section-kicker">TRAZABILIDAD</span><h2>Cómo se toma cada decisión</h2><p>Una lógica explicable para que la gerente pueda confiar en la recomendación y discutirla con cada sucursal.</p></div>
-                <div className="method-flow">
-                  <article><span>01</span><h3>Limpiar semanas atípicas</h3><p>Se usa la mediana y la desviación absoluta para limitar picos aislados sin borrar la tendencia real.</p></article>
-                  <article><span>02</span><h3>Proyectar semana 7</h3><p>El promedio ponderado prioriza las semanas recientes y añade una tendencia acotada a ±15%.</p></article>
-                  <article><span>03</span><h3>Descontar inventario</h3><p>Necesidad real = máximo entre cero y consumo proyectado menos stock actual.</p></article>
-                  <article><span>04</span><h3>Redondear por formato</h3><p>Se divide la necesidad por el tamaño del empaque y se redondea hacia arriba. Menos de un formato extra no dispara alerta.</p></article>
-                </div>
-                <article className="formula-card"><span>EJEMPLO DE DECISIÓN</span><h3>Necesidad = proyección − inventario</h3><p>Si se proyectan 87 kg, hay 12 kg en stock y el proveedor vende cajas de 10 kg: se necesitan 75 kg → <b>8 cajas</b>. Pedir 8 es correcto; pedir 9 ya representa un sobrepedido.</p></article>
-              </section>
-            )}
           </div>
 
           <aside className="chat-panel">
