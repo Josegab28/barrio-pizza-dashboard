@@ -279,13 +279,23 @@ export function Dashboard() {
   }, []);
 
   function updateOrder(branch: string, ingredientId: string, value: number) {
-    setOrders((current) =>
-      current.map((order) =>
+    const nextValue = String(Math.max(0, Math.floor(value || 0)));
+    setOrders((current) => {
+      const exists = current.some(
+        (order) => order.sucursal === branch && order.ingrediente_id === ingredientId,
+      );
+      if (!exists) {
+        return [
+          ...current,
+          { sucursal: branch, ingrediente_id: ingredientId, cantidad_formatos: nextValue },
+        ];
+      }
+      return current.map((order) =>
         order.sucursal === branch && order.ingrediente_id === ingredientId
-          ? { ...order, cantidad_formatos: String(Math.max(0, Math.floor(value || 0))) }
+          ? { ...order, cantidad_formatos: nextValue }
           : order,
-      ),
-    );
+      );
+    });
   }
 
   function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
@@ -378,7 +388,7 @@ export function Dashboard() {
         if (a.status !== b.status) return a.status === "critical" ? -1 : 1;
         return Math.abs(b.deltaBase) - Math.abs(a.deltaBase);
       })
-      .slice(0, 36)
+      .slice(0, 18)
       .map((line) => ({
         sucursal: line.branch,
         ingrediente: line.ingredient,
@@ -430,18 +440,18 @@ export function Dashboard() {
     setMessages((current) => [...current, { role: "user", text: cleanQuestion }]);
     setChatLoading(true);
 
-    const fallback = () => {
+    const fallback = (reason?: string) => {
       const answer = localDataAnswer(cleanQuestion);
       setMessages((current) => [
         ...current,
         { role: "assistant", text: answer, source: "local" },
       ]);
+      if (reason) setToast(reason);
     };
 
     try {
       if (aiRequestCount.current >= 8) {
-        fallback();
-        setToast("Se alcanzó el límite de 8 consultas con IA de esta sesión. El respaldo local sigue activo.");
+        fallback("Se alcanzó el límite de 8 consultas con IA de esta sesión. El respaldo local sigue activo.");
         return;
       }
       aiRequestCount.current += 1;
@@ -450,14 +460,22 @@ export function Dashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: cleanQuestion, context: buildChatContext(cleanQuestion) }),
       });
-      const payload = (await response.json()) as { answer?: string; code?: string };
+      const payload = (await response.json()) as { answer?: string; code?: string; error?: string };
       if (!response.ok || !payload.answer) throw new Error(payload.code ?? "chat_error");
       setMessages((current) => [
         ...current,
         { role: "assistant", text: payload.answer!, source: "ai" },
       ]);
-    } catch {
-      fallback();
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "chat_error";
+      const notice = code === "billing_required"
+        ? "La cuenta de Gemini no tiene créditos disponibles. Agrega saldo en AI Studio o usa una clave de un proyecto con Free Tier."
+        : code === "rate_limited"
+          ? "Gemini alcanzó el límite temporal. Se usó el respaldo local; intenta de nuevo en un minuto."
+          : code === "timeout"
+            ? "Gemini tardó demasiado. Se usó el respaldo local; puedes volver a intentarlo."
+            : "Gemini no pudo responder. Se usó el respaldo local y puedes volver a intentarlo.";
+      fallback(notice);
     } finally {
       setChatLoading(false);
     }

@@ -60,11 +60,16 @@ test("keeps purchasing logic, AI guardrails, PDF export, data and social asset i
   assert.match(dashboard, /<BranchMap/);
   assert.match(dashboard, /downloadOrderPdf/);
   assert.match(dashboard, /buildChatContext/);
+  assert.match(dashboard, /if \(!exists\)/);
+  assert.match(dashboard, /ingrediente_id: ingredientId/);
+  assert.match(dashboard, /slice\(0, 18\)/);
   assert.match(chatRoute, /store: false/);
   assert.match(chatRoute, /generativelanguage\.googleapis\.com\/v1\/interactions/);
-  assert.match(chatRoute, /max_output_tokens: 220/);
+  assert.match(chatRoute, /max_output_tokens: 180/);
   assert.match(chatRoute, /thinking_level: "minimal"/);
-  assert.match(chatRoute, /MAX_REQUESTS_PER_MINUTE = 5/);
+  assert.match(chatRoute, /MAX_REQUESTS_PER_MINUTE = 8/);
+  assert.match(chatRoute, /controller\.abort\(\), 55_000/);
+  assert.match(chatRoute, /billing_required/);
   assert.match(pdfBuilder, /Orden de compra corregida/);
   assert.match(pdfBuilder, /Página \$\{page\} de \$\{pages\}/);
   assert.match(packageJson, /jspdf-autotable/);

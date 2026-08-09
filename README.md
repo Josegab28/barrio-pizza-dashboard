@@ -80,19 +80,21 @@ No se encontraron claves duplicadas, valores vacíos ni cantidades negativas. La
 
 ## Chat con los datos
 
-El chat envía a Gemini un contexto compacto construido por el motor de reglas: resumen global, estado por sucursal, totales por proveedor y hasta 36 líneas relevantes. El modelo redacta la explicación, pero no calcula ni sustituye las recomendaciones. Si la API no está configurada, excede el límite o no responde, el dashboard usa automáticamente un intérprete local para preguntas frecuentes como:
+El chat envía a Gemini un contexto compacto construido por el motor de reglas: resumen global, estado por sucursal, totales por proveedor y hasta 18 líneas relevantes. El modelo redacta la explicación, pero no calcula ni sustituye las recomendaciones. Si la API no está configurada, excede el límite o no responde, el dashboard usa automáticamente un intérprete local para preguntas frecuentes y muestra el motivo del cambio de modo, por ejemplo:
 
 - “¿Dónde hay mayor riesgo de quiebre?”
 - “¿Qué sucursal está pidiendo demasiado?”
 - “¿Dónde falta mozzarella?”
 - “Resume el pedido por proveedor.”
 
+Si el proyecto de Gemini agota sus créditos prepagados, la interfaz lo indica expresamente. Google no devuelve automáticamente esos proyectos al Free Tier: hay que agregar saldo, desactivar la facturación del proyecto para intentar volver al nivel gratuito o usar una clave de otro proyecto con cuota disponible.
+
 Controles de uso incluidos:
 
 - máximo 280 caracteres por pregunta;
 - máximo 8 consultas con IA por sesión del navegador;
-- máximo 5 solicitudes por minuto e IP como protección de primera línea;
-- respuesta limitada a 220 tokens y 35 segundos;
+- máximo 8 solicitudes por minuto e IP como protección de primera línea;
+- respuesta limitada a 180 tokens y 55 segundos;
 - `store: false`, para no guardar la interacción en Gemini;
 - contexto máximo de 14.000 caracteres y prompt que prohíbe inventar cifras.
 

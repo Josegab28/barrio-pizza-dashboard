@@ -1,6 +1,6 @@
 const MAX_QUESTION_LENGTH = 280;
 const MAX_CONTEXT_LENGTH = 14_000;
-const MAX_REQUESTS_PER_MINUTE = 5;
+const MAX_REQUESTS_PER_MINUTE = 8;
 
 type RateEntry = { count: number; resetAt: number };
 
@@ -107,7 +107,7 @@ export async function POST(request: Request) {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 35_000);
+  const timeout = setTimeout(() => controller.abort(), 55_000);
 
   try {
     const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
         ].join(" "),
         input: `PREGUNTA:\n${question}\n\nCONTEXTO:\n${context}`,
         generation_config: {
-          max_output_tokens: 220,
+          max_output_tokens: 180,
           thinking_level: "minimal",
           thinking_summaries: "none",
         },
@@ -144,7 +144,16 @@ export async function POST(request: Request) {
         typeof payload.error === "object" && payload.error
           ? String((payload.error as { message?: unknown }).message ?? "Error de Gemini")
           : "Error de Gemini";
-      return json({ code: "upstream_error", error: detail }, response.status >= 500 ? 502 : 400);
+      const billingRequired = /prepayment credits are depleted/i.test(detail);
+      return json(
+        {
+          code: billingRequired ? "billing_required" : "upstream_error",
+          error: billingRequired
+            ? "La cuenta de Gemini no tiene créditos disponibles."
+            : detail,
+        },
+        billingRequired ? 402 : response.status >= 500 ? 502 : 400,
+      );
     }
 
     const answer = extractOutputText(payload);
