@@ -5,7 +5,7 @@ Dashboard administrativo para revisar automáticamente las órdenes semanales de
 ## Qué incluye
 
 - Resumen ejecutivo con riesgos de quiebre, sobrepedidos, formatos a ajustar y líneas correctas.
-- Mapa interactivo de las cuatro sucursales con un resumen al seleccionar cada marcador.
+- Mapa interactivo de las cuatro sucursales con alertas y stock actual desglosado por unidad al seleccionar cada marcador.
 - Alertas accionables con la cantidad pedida y la cantidad recomendada.
 - Simulador para editar cantidades o cargar una nueva orden CSV y recalcular todo al instante.
 - Pedido corregido agrupado por proveedor y exportable como un PDF listo para revisar o enviar; el CSV se conserva como respaldo técnico.

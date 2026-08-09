@@ -41,8 +41,9 @@ test("server-renders the Barrio dashboard shell", async () => {
 });
 
 test("keeps purchasing logic, AI guardrails, PDF export, data and social asset in the shipped project", async () => {
-  const [dashboard, chatRoute, pdfBuilder, packageJson, envExample, ingredients, history, inventory, orders] = await Promise.all([
+  const [dashboard, branchMap, chatRoute, pdfBuilder, packageJson, envExample, ingredients, history, inventory, orders] = await Promise.all([
     readFile(new URL("../app/Dashboard.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/BranchMap.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/chat/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/lib/orderPdf.ts", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
@@ -58,6 +59,8 @@ test("keeps purchasing logic, AI guardrails, PDF export, data and social asset i
   assert.match(dashboard, /missingOrders/);
   assert.match(dashboard, /orphanOrders/);
   assert.match(dashboard, /<BranchMap/);
+  assert.match(dashboard, /Stock actual: \{branch\.stockSummary\}/);
+  assert.match(branchMap, /STOCK ACTUAL/);
   assert.match(dashboard, /downloadOrderPdf/);
   assert.match(dashboard, /buildChatContext/);
   assert.doesNotMatch(dashboard, /Cómo se toma cada decisión/);

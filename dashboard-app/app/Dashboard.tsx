@@ -243,11 +243,20 @@ export function Dashboard() {
     () =>
       branches.map((branch) => {
         const branchLines = lines.filter((line) => line.branch === branch);
+        const stockByUnit = branchLines.reduce((summary, line) => {
+          summary.set(line.unit, (summary.get(line.unit) ?? 0) + line.stock);
+          return summary;
+        }, new Map<string, number>());
+        const stockSummary = ["kg", "L", "und"]
+          .filter((unit) => stockByUnit.has(unit))
+          .map((unit) => `${number.format(stockByUnit.get(unit) ?? 0)} ${unit}`)
+          .join(" · ");
         return {
           name: branch,
           critical: branchLines.filter((line) => line.status === "critical").length,
           excess: branchLines.filter((line) => line.status === "warning").length,
           correct: branchLines.filter((line) => line.status === "ok").length,
+          stockSummary,
         };
       }),
     [branches, lines],
@@ -618,7 +627,10 @@ export function Dashboard() {
                         const total = branch.critical + branch.excess + branch.correct;
                         return (
                           <button key={branch.name} onClick={() => setBranch(branch.name)} className={selectedBranch === branch.name ? "branch-row active" : "branch-row"}>
-                            <span className="branch-row-label"><b>{branch.name}</b><em>{branch.critical + branch.excess} alertas</em></span>
+                            <span className="branch-row-label">
+                              <span><b>{branch.name}</b><small>Stock actual: {branch.stockSummary}</small></span>
+                              <em>{branch.critical + branch.excess} alertas</em>
+                            </span>
                             <span className="stacked-bar" aria-label={`${branch.critical} quiebres, ${branch.excess} excesos, ${branch.correct} correctas`}>
                               <i className="bar-critical" style={{ width: `${(branch.critical / total) * 100}%` }} />
                               <i className="bar-warning" style={{ width: `${(branch.excess / total) * 100}%` }} />

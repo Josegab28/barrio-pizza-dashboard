@@ -7,6 +7,7 @@ export type BranchMapStat = {
   critical: number;
   excess: number;
   correct: number;
+  stockSummary: string;
 };
 
 const coordinates: Record<string, [number, number]> = {
@@ -63,7 +64,7 @@ export function BranchMap({
         }).addTo(map);
 
         marker.bindPopup(
-          `<div class="map-popup"><small>SUCURSAL</small><strong>${branch.name}</strong><div><span>${branch.critical} quiebres</span><span>${branch.excess} excesos</span></div><button>Ver detalle →</button></div>`,
+          `<div class="map-popup"><small>SUCURSAL</small><strong>${branch.name}</strong><div><span>${branch.critical} quiebres</span><span>${branch.excess} excesos</span></div><p class="map-stock"><small>STOCK ACTUAL</small><b>${branch.stockSummary}</b></p><button>Ver detalle →</button></div>`,
           { closeButton: false, offset: [0, -34] },
         );
         marker.on("click", () => onSelect(branch.name));
