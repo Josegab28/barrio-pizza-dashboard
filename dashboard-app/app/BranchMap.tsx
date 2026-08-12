@@ -10,6 +10,16 @@ export type BranchMapStat = {
   stockSummary: string;
 };
 
+const htmlEntities: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
+
+const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (char) => htmlEntities[char] ?? char);
+
 const coordinates: Record<string, [number, number]> = {
   "Brisas del Golf": [9.0643, -79.4382],
   "Costa del Este": [9.0117, -79.4782],
@@ -57,14 +67,14 @@ export function BranchMap({
         const marker = L.marker(point, {
           icon: L.divIcon({
             className: "branch-pin-shell",
-            html: `<button class="branch-pin ${level}${active}" aria-label="Ver ${branch.name}"><span>⌂</span><b>${branch.critical + branch.excess}</b></button>`,
+            html: `<button class="branch-pin ${level}${active}" aria-label="Ver ${escapeHtml(branch.name)}"><span>⌂</span><b>${branch.critical + branch.excess}</b></button>`,
             iconSize: [52, 52],
             iconAnchor: [26, 48],
           }),
         }).addTo(map);
 
         marker.bindPopup(
-          `<div class="map-popup"><small>SUCURSAL</small><strong>${branch.name}</strong><div><span>${branch.critical} quiebres</span><span>${branch.excess} excesos</span></div><p class="map-stock"><small>STOCK ACTUAL</small><b>${branch.stockSummary}</b></p><button>Ver detalle →</button></div>`,
+          `<div class="map-popup"><small>SUCURSAL</small><strong>${escapeHtml(branch.name)}</strong><div><span>${branch.critical} quiebres</span><span>${branch.excess} excesos</span></div><p class="map-stock"><small>STOCK ACTUAL</small><b>${escapeHtml(branch.stockSummary)}</b></p><button>Ver detalle →</button></div>`,
           { closeButton: false, offset: [0, -34] },
         );
         marker.on("click", () => onSelect(branch.name));
