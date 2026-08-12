@@ -87,7 +87,8 @@ export async function POST(request: Request) {
   let body: { question?: unknown; context?: unknown };
   try {
     body = (await request.json()) as { question?: unknown; context?: unknown };
-  } catch {
+  } catch (error) {
+    console.warn("[chat] cuerpo de la solicitud no es JSON válido", error);
     return json({ code: "invalid_json", error: "La solicitud no contiene JSON válido." }, 400);
   }
 
@@ -138,13 +139,29 @@ export async function POST(request: Request) {
       signal: controller.signal,
     });
 
-    const payload = (await response.json()) as Record<string, unknown>;
+    const rawBody = await response.text();
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = JSON.parse(rawBody) as Record<string, unknown>;
+    } catch (error) {
+      console.error(
+        `[chat] Gemini devolvió una respuesta no JSON (HTTP ${response.status})`,
+        error,
+        rawBody.slice(0, 500),
+      );
+      return json(
+        { code: "upstream_invalid_response", error: "La IA devolvió una respuesta ilegible." },
+        502,
+      );
+    }
+
     if (!response.ok) {
       const detail =
         typeof payload.error === "object" && payload.error
           ? String((payload.error as { message?: unknown }).message ?? "Error de Gemini")
           : "Error de Gemini";
       const billingRequired = /prepayment credits are depleted/i.test(detail);
+      console.error(`[chat] Gemini respondió con error HTTP ${response.status}: ${detail}`);
       return json(
         {
           code: billingRequired ? "billing_required" : "upstream_error",
@@ -157,7 +174,10 @@ export async function POST(request: Request) {
     }
 
     const answer = extractOutputText(payload);
-    if (!answer) return json({ code: "empty_response", error: "La IA no devolvió una respuesta utilizable." }, 502);
+    if (!answer) {
+      console.error("[chat] Gemini respondió sin texto utilizable", Object.keys(payload));
+      return json({ code: "empty_response", error: "La IA no devolvió una respuesta utilizable." }, 502);
+    }
 
     return json(
       { answer, mode: "ai", provider: "gemini", model },
@@ -166,6 +186,10 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "AbortError";
+    console.error(
+      timedOut ? "[chat] la consulta a Gemini superó el tiempo límite" : "[chat] fallo la consulta a Gemini",
+      error,
+    );
     return json(
       {
         code: timedOut ? "timeout" : "upstream_unavailable",
