@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BranchMap, type BranchMapStat } from "./BranchMap";
 import { downloadOrderPdf } from "./lib/orderPdf";
 
@@ -129,6 +129,25 @@ const number = new Intl.NumberFormat("es-PA", { maximumFractionDigits: 1 });
 const plain = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const DEMO_EMAIL = "admin@barriopizza.com";
 const DEMO_PASSWORD = "barrio2026";
+const DEMO_ACCESS_KEY = "barrio-demo-access";
+const UNIT_ORDER = ["kg", "L", "und"];
+
+const demoAccessListeners = new Set<() => void>();
+
+function subscribeDemoAccess(listener: () => void) {
+  demoAccessListeners.add(listener);
+  return () => demoAccessListeners.delete(listener);
+}
+
+function readDemoAccess() {
+  return sessionStorage.getItem(DEMO_ACCESS_KEY) === "active";
+}
+
+function writeDemoAccess(active: boolean) {
+  if (active) sessionStorage.setItem(DEMO_ACCESS_KEY, "active");
+  else sessionStorage.removeItem(DEMO_ACCESS_KEY);
+  demoAccessListeners.forEach((listener) => listener());
+}
 
 export function Dashboard() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -143,8 +162,6 @@ export function Dashboard() {
   const [toast, setToast] = useState("");
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [demoAccess, setDemoAccess] = useState(false);
-  const [demoAccessReady, setDemoAccessReady] = useState(false);
   const [loginEmail, setLoginEmail] = useState(DEMO_EMAIL);
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -157,12 +174,10 @@ export function Dashboard() {
   const uploadRef = useRef<HTMLInputElement>(null);
   const aiRequestCount = useRef(0);
 
-  useEffect(() => {
-    setDemoAccess(sessionStorage.getItem("barrio-demo-access") === "active");
-    setDemoAccessReady(true);
-  }, []);
+  const demoAccess = useSyncExternalStore(subscribeDemoAccess, readDemoAccess, () => null);
 
   useEffect(() => {
+    if (!demoAccess) return;
     Promise.all(
       ["ingredientes", "consumo_historico", "inventario_actual", "orden_compra_semana"].map(
         async (name) => {
@@ -182,7 +197,7 @@ export function Dashboard() {
       })
       .catch((error: Error) => setLoadError(error.message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [demoAccess]);
 
   const lines = useMemo<Line[]>(() => {
     const ingredientMap = new Map(ingredients.map((item) => [item.ingrediente_id, item]));
@@ -259,10 +274,16 @@ export function Dashboard() {
           summary.set(line.unit, (summary.get(line.unit) ?? 0) + line.stock);
           return summary;
         }, new Map<string, number>());
-        const stockSummary = ["kg", "L", "und"]
-          .filter((unit) => stockByUnit.has(unit))
-          .map((unit) => `${number.format(stockByUnit.get(unit) ?? 0)} ${unit}`)
-          .join(" · ");
+        const stockSummary =
+          [...stockByUnit.entries()]
+            .sort(([a], [b]) => {
+              const rankA = UNIT_ORDER.indexOf(a);
+              const rankB = UNIT_ORDER.indexOf(b);
+              if (rankA !== rankB) return (rankA + 1 || UNIT_ORDER.length + 1) - (rankB + 1 || UNIT_ORDER.length + 1);
+              return a.localeCompare(b);
+            })
+            .map(([unit, total]) => `${number.format(total)} ${unit}`)
+            .join(" · ") || "sin datos";
         return {
           name: branch,
           critical: branchLines.filter((line) => line.status === "critical").length,
@@ -510,36 +531,27 @@ export function Dashboard() {
 
   function submitDemoLogin(event: React.FormEvent) {
     event.preventDefault();
-    if (plain(loginEmail.trim()) !== DEMO_EMAIL || loginPassword !== DEMO_PASSWORD) {
+    if (loginEmail.trim().toLowerCase() !== DEMO_EMAIL || loginPassword !== DEMO_PASSWORD) {
       setLoginError("Revisa las credenciales de demostración.");
       return;
     }
-    sessionStorage.setItem("barrio-demo-access", "active");
     setLoginError("");
-    setDemoAccess(true);
+    writeDemoAccess(true);
   }
 
   function closeDemoSession() {
-    sessionStorage.removeItem("barrio-demo-access");
     setLoginPassword("");
-    setDemoAccess(false);
+    setOrders(initialOrders);
+    setSelectedBranch("Todas");
+    setView("overview");
+    writeDemoAccess(false);
   }
 
-  if (loading || !demoAccessReady) {
+  if (demoAccess === null) {
     return (
       <main className="loading-screen">
         <div className="pizza-loader">B</div>
         <p>Preparando el centro de compras…</p>
-      </main>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <main className="loading-screen error-screen">
-        <div className="pizza-loader">!</div>
-        <h1>No pudimos cargar los datos</h1>
-        <p>{loadError}</p>
       </main>
     );
   }
@@ -568,7 +580,10 @@ export function Dashboard() {
               <input
                 type="email"
                 value={loginEmail}
-                onChange={(event) => setLoginEmail(event.target.value)}
+                onChange={(event) => {
+                  setLoginEmail(event.target.value);
+                  setLoginError("");
+                }}
                 autoComplete="username"
                 required
               />
@@ -578,7 +593,10 @@ export function Dashboard() {
               <input
                 type="password"
                 value={loginPassword}
-                onChange={(event) => setLoginPassword(event.target.value)}
+                onChange={(event) => {
+                  setLoginPassword(event.target.value);
+                  setLoginError("");
+                }}
                 autoComplete="current-password"
                 placeholder="Ingresa la contraseña demo"
                 required
@@ -594,6 +612,25 @@ export function Dashboard() {
             <p className="demo-disclaimer">Acceso visual para fines de demostración. No reemplaza un sistema de autenticación de producción.</p>
           </form>
         </section>
+      </main>
+    );
+  }
+
+  if (loading) {
+    return (
+      <main className="loading-screen">
+        <div className="pizza-loader">B</div>
+        <p>Preparando el centro de compras…</p>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="loading-screen error-screen">
+        <div className="pizza-loader">!</div>
+        <h1>No pudimos cargar los datos</h1>
+        <p>{loadError}</p>
       </main>
     );
   }
@@ -718,8 +755,8 @@ export function Dashboard() {
                               <em>{branch.critical + branch.excess} alertas</em>
                             </span>
                             <span className="stacked-bar" aria-label={`${branch.critical} quiebres, ${branch.excess} excesos, ${branch.correct} correctas`}>
-                              <i className="bar-critical" style={{ width: `${(branch.critical / total) * 100}%` }} />
-                              <i className="bar-warning" style={{ width: `${(branch.excess / total) * 100}%` }} />
+                              <i className="bar-critical" style={{ width: `${(branch.critical / (total || 1)) * 100}%` }} />
+                              <i className="bar-warning" style={{ width: `${(branch.excess / (total || 1)) * 100}%` }} />
                               <i className="bar-ok" style={{ width: `${(branch.correct / total) * 100}%` }} />
                             </span>
                           </button>

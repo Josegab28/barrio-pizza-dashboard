@@ -26,7 +26,7 @@ npm run dev
 
 Abrir `http://localhost:3000`.
 
-La clave nunca se envía al navegador ni debe subirse a GitHub. En la versión publicada se configura como variable secreta del sitio.
+Para activar el asistente con IA, copiar `dashboard-app/.env.example` a `dashboard-app/.env.local` y definir allí `GEMINI_API_KEY` y `GEMINI_MODEL`. La clave nunca se envía al navegador ni debe subirse a GitHub: solo se lee en el servidor y en la versión publicada se configura como variable secreta del sitio. Sin clave, el dashboard responde con el intérprete local.
 
 Para validar la versión de producción:
 
