@@ -35,6 +35,17 @@ cd dashboard-app
 npm run build
 ```
 
+## Pruebas
+
+```bash
+cd dashboard-app
+npm run test:unit           # pruebas unitarias (rápidas, sin build)
+npm run test:unit:coverage  # las mismas pruebas con reporte de cobertura
+npm test                    # unitarias + build + render del worker
+```
+
+Las pruebas unitarias viven en `dashboard-app/tests/unit` y cubren el endpoint del asistente (`app/api/chat/route.ts`), el generador de órdenes en PDF (`app/lib/orderPdf.ts`) y el acceso autenticado (`app/chatgpt-auth.ts`). Los módulos `.ts` se importan directamente con el eliminador de tipos de Node; `tests/support` contiene los dobles de prueba de `next/headers` y `next/navigation`.
+
 ## Datos
 
 La aplicación consume copias de los cuatro archivos de `/datos` desde `dashboard-app/public/datos`:

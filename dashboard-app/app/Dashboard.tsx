@@ -3,6 +3,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { BranchMap, type BranchMapStat } from "./BranchMap";
 import { downloadOrderPdf } from "./lib/orderPdf";
+import {
+  compareByUrgency,
+  countByStatus,
+  findMentions,
+  groupBySupplier,
+  lineKey,
+  matchesMentions,
+  rowKey,
+  summarizeBySupplier,
+  sumRecommended,
+  type LineStatus,
+} from "./lib/orderLines";
+import { formatAmount, plainText } from "./lib/text";
 
 type Ingredient = {
   ingrediente_id: string;
@@ -48,7 +61,7 @@ type Line = {
   recommended: number;
   orderedBase: number;
   deltaBase: number;
-  status: "critical" | "warning" | "ok";
+  status: LineStatus;
 };
 
 type View = "overview" | "orders" | "data";
@@ -125,8 +138,6 @@ function projectNextWeek(values: number[]) {
   return Math.max(0, recent + trend);
 }
 
-const number = new Intl.NumberFormat("es-PA", { maximumFractionDigits: 1 });
-const plain = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const DEMO_EMAIL = "admin@barriopizza.com";
 const DEMO_PASSWORD = "barrio2026";
 const DEMO_ACCESS_KEY = "barrio-demo-access";
@@ -203,16 +214,14 @@ export function Dashboard() {
     const ingredientMap = new Map(ingredients.map((item) => [item.ingrediente_id, item]));
     const history = new Map<string, number[]>();
     consumption.forEach((item) => {
-      const key = `${item.sucursal}::${item.ingrediente_id}`;
+      const key = rowKey(item);
       const current = history.get(key) ?? [];
       current.push(Number(item.consumo_unidad_base));
       history.set(key, current);
     });
-    const orderMap = new Map(
-      orders.map((item) => [`${item.sucursal}::${item.ingrediente_id}`, Number(item.cantidad_formatos)]),
-    );
+    const orderMap = new Map(orders.map((item) => [rowKey(item), Number(item.cantidad_formatos)]));
     return inventory.map((item) => {
-      const key = `${item.sucursal}::${item.ingrediente_id}`;
+      const key = rowKey(item);
       const ingredient = ingredientMap.get(item.ingrediente_id)!;
       const projected = projectNextWeek(history.get(key) ?? []);
       const stock = Number(item.stock_actual_unidad_base);
@@ -221,7 +230,8 @@ export function Dashboard() {
       const recommended = need > 0 ? Math.ceil(need / packSize) : 0;
       const ordered = orderMap.get(key) ?? 0;
       const orderedBase = ordered * packSize;
-      const status = orderedBase + 0.0001 < need ? "critical" : ordered > recommended ? "warning" : "ok";
+      const status: LineStatus =
+        orderedBase + 0.0001 < need ? "critical" : ordered > recommended ? "warning" : "ok";
       return {
         branch: item.sucursal,
         ingredientId: item.ingrediente_id,
@@ -229,7 +239,7 @@ export function Dashboard() {
         supplier: ingredient.proveedor,
         unit: ingredient.unidad_base,
         pack: ingredient.formato_compra,
-        perishable: plain(ingredient.es_perecedero) === "si",
+        perishable: plainText(ingredient.es_perecedero) === "si",
         projected,
         stock,
         need,
@@ -244,11 +254,11 @@ export function Dashboard() {
 
   const branches = useMemo(() => [...new Set(lines.map((line) => line.branch))], [lines]);
   const dataGaps = useMemo(() => {
-    const inventoryKeys = new Set(inventory.map((item) => `${item.sucursal}::${item.ingrediente_id}`));
-    const orderKeys = new Set(orders.map((item) => `${item.sucursal}::${item.ingrediente_id}`));
+    const inventoryKeys = new Set(inventory.map(rowKey));
+    const orderKeys = new Set(orders.map(rowKey));
     return {
-      missingOrders: inventory.filter((item) => !orderKeys.has(`${item.sucursal}::${item.ingrediente_id}`)),
-      orphanOrders: orders.filter((item) => !inventoryKeys.has(`${item.sucursal}::${item.ingrediente_id}`)),
+      missingOrders: inventory.filter((item) => !orderKeys.has(rowKey(item))),
+      orphanOrders: orders.filter((item) => !inventoryKeys.has(rowKey(item))),
     };
   }, [inventory, orders]);
   const visibleLines = useMemo(
@@ -256,13 +266,7 @@ export function Dashboard() {
     [lines, selectedBranch],
   );
   const issues = useMemo(
-    () =>
-      visibleLines
-        .filter((line) => line.status !== "ok")
-        .sort((a, b) => {
-          if (a.status !== b.status) return a.status === "critical" ? -1 : 1;
-          return Math.abs(b.deltaBase) - Math.abs(a.deltaBase);
-        }),
+    () => visibleLines.filter((line) => line.status !== "ok").sort(compareByUrgency),
     [visibleLines],
   );
 
@@ -282,13 +286,14 @@ export function Dashboard() {
               if (rankA !== rankB) return (rankA + 1 || UNIT_ORDER.length + 1) - (rankB + 1 || UNIT_ORDER.length + 1);
               return a.localeCompare(b);
             })
-            .map(([unit, total]) => `${number.format(total)} ${unit}`)
+            .map(([unit, total]) => `${formatAmount(total)} ${unit}`)
             .join(" · ") || "sin datos";
+        const counts = countByStatus(branchLines);
         return {
           name: branch,
-          critical: branchLines.filter((line) => line.status === "critical").length,
-          excess: branchLines.filter((line) => line.status === "warning").length,
-          correct: branchLines.filter((line) => line.status === "ok").length,
+          critical: counts.critical,
+          excess: counts.warning,
+          correct: counts.ok,
           stockSummary,
         };
       }),
@@ -296,23 +301,15 @@ export function Dashboard() {
   );
 
   const totals = useMemo(() => {
-    const critical = visibleLines.filter((line) => line.status === "critical").length;
-    const excess = visibleLines.filter((line) => line.status === "warning").length;
-    const correct = visibleLines.filter((line) => line.status === "ok").length;
+    const counts = countByStatus(visibleLines);
     const formatsToAdjust = visibleLines.reduce(
       (sum, line) => sum + Math.abs(line.ordered - line.recommended),
       0,
     );
-    return { critical, excess, correct, formatsToAdjust };
+    return { critical: counts.critical, excess: counts.warning, correct: counts.ok, formatsToAdjust };
   }, [visibleLines]);
 
-  const supplierGroups = useMemo(() => {
-    const groups = new Map<string, Line[]>();
-    visibleLines
-      .filter((line) => line.recommended > 0)
-      .forEach((line) => groups.set(line.supplier, [...(groups.get(line.supplier) ?? []), line]));
-    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  }, [visibleLines]);
+  const supplierGroups = useMemo(() => groupBySupplier(visibleLines), [visibleLines]);
 
   const setBranch = useCallback((branch: string) => {
     setSelectedBranch(branch);
@@ -349,8 +346,8 @@ export function Dashboard() {
         setToast("El CSV no contiene las columnas esperadas.");
         return;
       }
-      const knownKeys = new Set(inventory.map((item) => `${item.sucursal}::${item.ingrediente_id}`));
-      if (next.some((row) => !knownKeys.has(`${row.sucursal}::${row.ingrediente_id}`))) {
+      const knownKeys = new Set(inventory.map(rowKey));
+      if (next.some((row) => !knownKeys.has(rowKey(row)))) {
         setToast("El archivo contiene sucursales o ingredientes desconocidos.");
         return;
       }
@@ -373,12 +370,9 @@ export function Dashboard() {
   }
 
   function localDataAnswer(question: string) {
-    const query = plain(question);
-    const mentionedBranch = branches.find((branch) => query.includes(plain(branch)));
-    const mentionedIngredient = ingredients.find((ingredient) => query.includes(plain(ingredient.nombre)));
-    let candidates = lines;
-    if (mentionedBranch) candidates = candidates.filter((line) => line.branch === mentionedBranch);
-    if (mentionedIngredient) candidates = candidates.filter((line) => line.ingredientId === mentionedIngredient.ingrediente_id);
+    const mentions = findMentions(question, branches, ingredients);
+    const { query, branch: mentionedBranch, ingredient: mentionedIngredient } = mentions;
+    const candidates = lines.filter((line) => matchesMentions(line, mentions));
     let answer = "";
 
     if (/demasiado|exceso|sobrepedido|sobre pedido|de mas/.test(query)) {
@@ -386,49 +380,36 @@ export function Dashboard() {
         .filter((line) => line.status === "warning")
         .sort((a, b) => b.deltaBase - a.deltaBase);
       answer = over.length
-        ? `${over[0].branch} concentra el mayor sobrepedido: ${over[0].ingredient}. Ordenó ${over[0].ordered} formatos y recomiendo ${over[0].recommended}; son ${number.format(over[0].deltaBase)} ${over[0].unit} por encima de la necesidad.`
+        ? `${over[0].branch} concentra el mayor sobrepedido: ${over[0].ingredient}. Ordenó ${over[0].ordered} formatos y recomiendo ${over[0].recommended}; son ${formatAmount(over[0].deltaBase)} ${over[0].unit} por encima de la necesidad.`
         : "No encuentro sobrepedidos con esos filtros. El redondeo menor a un formato se considera normal.";
     } else if (/quiebre|falta|riesgo|menos|olvid/.test(query)) {
       const short = candidates
         .filter((line) => line.status === "critical")
         .sort((a, b) => a.deltaBase - b.deltaBase);
       answer = short.length
-        ? `El riesgo más alto está en ${short[0].branch}: faltan ${number.format(Math.abs(short[0].deltaBase))} ${short[0].unit} de ${short[0].ingredient}. La orden tiene ${short[0].ordered} formatos y debería tener ${short[0].recommended}.`
+        ? `El riesgo más alto está en ${short[0].branch}: faltan ${formatAmount(Math.abs(short[0].deltaBase))} ${short[0].unit} de ${short[0].ingredient}. La orden tiene ${short[0].ordered} formatos y debería tener ${short[0].recommended}.`
         : "No encuentro riesgos de quiebre con esos filtros.";
     } else if (/proveedor|proveedores/.test(query)) {
-      const provider = [...new Set(candidates.map((line) => line.supplier))]
-        .map((supplier) => ({
-          supplier,
-          formats: candidates.filter((line) => line.supplier === supplier).reduce((sum, line) => sum + line.recommended, 0),
-        }))
-        .sort((a, b) => b.formats - a.formats)[0];
+      const provider = summarizeBySupplier(candidates)[0];
       answer = provider
         ? `${provider.supplier} recibe el pedido corregido más grande: ${provider.formats} formatos en total. Puedes abrir “Pedido corregido” para ver el detalle listo para exportar.`
         : "No hay pedidos recomendados para ese filtro.";
     } else if (mentionedBranch || mentionedIngredient) {
-      const critical = candidates.filter((line) => line.status === "critical").length;
-      const warning = candidates.filter((line) => line.status === "warning").length;
-      answer = `Para ${mentionedBranch ?? mentionedIngredient?.nombre}: veo ${critical} riesgos de quiebre, ${warning} sobrepedidos y ${candidates.length - critical - warning} líneas correctas.`;
+      const counts = countByStatus(candidates);
+      answer = `Para ${mentionedBranch ?? mentionedIngredient?.nombre}: veo ${counts.critical} riesgos de quiebre, ${counts.warning} sobrepedidos y ${counts.ok} líneas correctas.`;
     } else {
-      answer = `Esta semana hay ${lines.filter((line) => line.status === "critical").length} riesgos de quiebre y ${lines.filter((line) => line.status === "warning").length} sobrepedidos. Prueba: “¿dónde falta mozzarella?” o “¿qué sucursal pide demasiado?”.`;
+      const counts = countByStatus(lines);
+      answer = `Esta semana hay ${counts.critical} riesgos de quiebre y ${counts.warning} sobrepedidos. Prueba: “¿dónde falta mozzarella?” o “¿qué sucursal pide demasiado?”.`;
     }
     return answer;
   }
 
   function buildChatContext(question: string) {
-    const query = plain(question);
-    const mentionedBranch = branches.find((branch) => query.includes(plain(branch)));
-    const mentionedIngredient = ingredients.find((ingredient) => query.includes(plain(ingredient.nombre)));
+    const mentions = findMentions(question, branches, ingredients);
+    const hasMention = Boolean(mentions.branch || mentions.ingredient);
     const relevant = lines
-      .filter((line) => {
-        if (mentionedBranch && line.branch !== mentionedBranch) return false;
-        if (mentionedIngredient && line.ingredientId !== mentionedIngredient.ingrediente_id) return false;
-        return mentionedBranch || mentionedIngredient ? true : line.status !== "ok";
-      })
-      .sort((a, b) => {
-        if (a.status !== b.status) return a.status === "critical" ? -1 : 1;
-        return Math.abs(b.deltaBase) - Math.abs(a.deltaBase);
-      })
+      .filter((line) => matchesMentions(line, mentions) && (hasMention || line.status !== "ok"))
+      .sort(compareByUrgency)
       .slice(0, 18)
       .map((line) => ({
         sucursal: line.branch,
@@ -445,22 +426,19 @@ export function Dashboard() {
         estado: line.status === "critical" ? "quiebre" : line.status === "warning" ? "sobrepedido" : "correcto",
       }));
 
-    const supplierSummary = [...new Set(lines.map((line) => line.supplier))]
-      .map((supplier) => ({
-        proveedor: supplier,
-        formatos_recomendados: lines
-          .filter((line) => line.supplier === supplier)
-          .reduce((sum, line) => sum + line.recommended, 0),
-        lineas: lines.filter((line) => line.supplier === supplier && line.recommended > 0).length,
-      }))
-      .sort((a, b) => b.formatos_recomendados - a.formatos_recomendados);
+    const supplierSummary = summarizeBySupplier(lines).map((total) => ({
+      proveedor: total.supplier,
+      formatos_recomendados: total.formats,
+      lineas: total.lines,
+    }));
+    const counts = countByStatus(lines);
 
     return JSON.stringify({
       periodo: "semana 7",
       resumen_global: {
-        riesgos_quiebre: lines.filter((line) => line.status === "critical").length,
-        sobrepedidos: lines.filter((line) => line.status === "warning").length,
-        lineas_correctas: lines.filter((line) => line.status === "ok").length,
+        riesgos_quiebre: counts.critical,
+        sobrepedidos: counts.warning,
+        lineas_correctas: counts.ok,
       },
       sucursales: branchStats,
       proveedores: supplierSummary,
@@ -774,11 +752,11 @@ export function Dashboard() {
                   </div>
                   <div className="alert-list">
                     {issues.slice(0, 6).map((line) => (
-                      <article className={`alert-row ${line.status}`} key={`${line.branch}-${line.ingredientId}`}>
+                      <article className={`alert-row ${line.status}`} key={lineKey(line.branch, line.ingredientId)}>
                         <span className="alert-icon">{line.status === "critical" ? "!" : "↓"}</span>
                         <div className="alert-copy">
                           <div><b>{line.ingredient}</b><span>{line.branch}</span></div>
-                          <p>{line.status === "critical" ? `Faltan ${number.format(Math.abs(line.deltaBase))} ${line.unit} para cubrir la proyección.` : `Sobran ${number.format(line.deltaBase)} ${line.unit}; excede un formato completo.`}</p>
+                          <p>{line.status === "critical" ? `Faltan ${formatAmount(Math.abs(line.deltaBase))} ${line.unit} para cubrir la proyección.` : `Sobran ${formatAmount(line.deltaBase)} ${line.unit}; excede un formato completo.`}</p>
                         </div>
                         <div className="alert-action"><span>{line.ordered} → <b>{line.recommended}</b></span><small>formatos</small></div>
                       </article>
@@ -798,9 +776,9 @@ export function Dashboard() {
                 <div className="supplier-grid">
                   {supplierGroups.map(([supplier, supplierLines]) => (
                     <article className="supplier-card" key={supplier}>
-                      <div className="supplier-head"><div className="supplier-avatar">{supplier.slice(0, 1)}</div><div><span>PROVEEDOR</span><h3>{supplier}</h3></div><b>{supplierLines.reduce((sum, line) => sum + line.recommended, 0)} formatos</b></div>
+                      <div className="supplier-head"><div className="supplier-avatar">{supplier.slice(0, 1)}</div><div><span>PROVEEDOR</span><h3>{supplier}</h3></div><b>{sumRecommended(supplierLines)} formatos</b></div>
                       <div className="supplier-lines">
-                        {supplierLines.map((line) => <div key={`${line.branch}-${line.ingredientId}`}><span><b>{line.ingredient}</b><small>{line.branch} · {line.pack}</small></span><strong>{line.recommended}</strong></div>)}
+                        {supplierLines.map((line) => <div key={lineKey(line.branch, line.ingredientId)}><span><b>{line.ingredient}</b><small>{line.branch} · {line.pack}</small></span><strong>{line.recommended}</strong></div>)}
                       </div>
                       <button
                         className="supplier-download"
@@ -831,8 +809,8 @@ export function Dashboard() {
                     <thead><tr><th>Ingrediente</th><th>Sucursal</th><th>Proyección</th><th>Stock</th><th>Necesidad</th><th>Orden</th><th>Recom.</th><th>Estado</th></tr></thead>
                     <tbody>
                       {visibleLines.map((line) => (
-                        <tr key={`${line.branch}-${line.ingredientId}`}>
-                          <td><b>{line.ingredient}</b><small>{line.pack}</small></td><td>{line.branch}</td><td>{number.format(line.projected)} {line.unit}</td><td>{number.format(line.stock)}</td><td>{number.format(line.need)}</td>
+                        <tr key={lineKey(line.branch, line.ingredientId)}>
+                          <td><b>{line.ingredient}</b><small>{line.pack}</small></td><td>{line.branch}</td><td>{formatAmount(line.projected)} {line.unit}</td><td>{formatAmount(line.stock)}</td><td>{formatAmount(line.need)}</td>
                           <td><input aria-label={`Cantidad de ${line.ingredient} para ${line.branch}`} type="number" min="0" value={line.ordered} onChange={(event) => updateOrder(line.branch, line.ingredientId, Number(event.target.value))} /></td>
                           <td><strong>{line.recommended}</strong></td><td><span className={`status-badge ${line.status}`}>{line.status === "critical" ? "Quiebre" : line.status === "warning" ? "Exceso" : "Correcto"}</span></td>
                         </tr>
