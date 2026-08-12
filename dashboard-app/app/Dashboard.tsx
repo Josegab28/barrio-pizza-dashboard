@@ -66,6 +66,52 @@ type Line = {
 
 type View = "overview" | "orders" | "data";
 type ChatMessage = { role: "assistant" | "user"; text: string; source?: "ai" | "local" };
+type CalculationIssue = { key: string; label: string; reason: string };
+
+class ChatRequestError extends Error {
+  readonly code: string;
+
+  constructor(code: string, detail?: string) {
+    super(detail && detail.trim() ? detail : code);
+    this.name = "ChatRequestError";
+    this.code = code;
+  }
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
+function readSessionValue(key: string) {
+  try {
+    return sessionStorage.getItem(key);
+  } catch (error) {
+    console.warn(`No se pudo leer sessionStorage["${key}"]`, error);
+    return null;
+  }
+}
+
+function writeSessionValue(key: string, value: string) {
+  try {
+    sessionStorage.setItem(key, value);
+    return true;
+  } catch (error) {
+    console.warn(`No se pudo escribir sessionStorage["${key}"]`, error);
+    return false;
+  }
+}
+
+function removeSessionValue(key: string) {
+  try {
+    sessionStorage.removeItem(key);
+    return true;
+  } catch (error) {
+    console.warn(`No se pudo borrar sessionStorage["${key}"]`, error);
+    return false;
+  }
+}
 
 const navItems: { id: View; label: string; icon: string }[] = [
   { id: "overview", label: "Resumen", icon: "◫" },
@@ -73,7 +119,7 @@ const navItems: { id: View; label: string; icon: string }[] = [
   { id: "data", label: "Datos y edición", icon: "⌁" },
 ];
 
-function parseCsv<T>(text: string): T[] {
+function parseTable(text: string): { headers: string[]; rows: Record<string, string>[] } {
   const rows: string[][] = [];
   let row: string[] = [];
   let field = "";
@@ -100,9 +146,26 @@ function parseCsv<T>(text: string): T[] {
     rows.push(row);
   }
   const headers = rows.shift() ?? [];
-  return rows.map((values) =>
-    Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])) as T,
-  );
+  return {
+    headers,
+    rows: rows.map((values) =>
+      Object.fromEntries(headers.map((header, index) => [header, values[index] ?? ""])),
+    ),
+  };
+}
+
+function parseCsv<T>(text: string): T[] {
+  return parseTable(text).rows as T[];
+}
+
+function parseDataset<T>(name: string, text: string, requiredColumns: string[]): T[] {
+  const { headers, rows } = parseTable(text);
+  const missing = requiredColumns.filter((column) => !headers.includes(column));
+  if (missing.length) {
+    throw new Error(`${name}.csv no tiene las columnas requeridas: ${missing.join(", ")}.`);
+  }
+  if (!rows.length) throw new Error(`${name}.csv no contiene filas de datos.`);
+  return rows as T[];
 }
 
 function median(values: number[]) {
@@ -169,7 +232,7 @@ export function Dashboard() {
   const aiRequestCount = useRef(0);
 
   useEffect(() => {
-    setDemoAccess(sessionStorage.getItem("barrio-demo-access") === "active");
+    setDemoAccess(readSessionValue("barrio-demo-access") === "active");
     setDemoAccessReady(true);
   }, []);
 
@@ -178,46 +241,116 @@ export function Dashboard() {
       ["ingredientes", "consumo_historico", "inventario_actual", "orden_compra_semana"].map(
         async (name) => {
           const response = await fetch(`/datos/${name}.csv`);
-          if (!response.ok) throw new Error(`No se pudo cargar ${name}.csv`);
+          if (!response.ok) {
+            throw new Error(`No se pudo cargar ${name}.csv (HTTP ${response.status}).`);
+          }
           return response.text();
         },
       ),
     )
       .then(([ingredientText, consumptionText, inventoryText, orderText]) => {
-        const loadedOrders = parseCsv<Order>(orderText);
-        setIngredients(parseCsv<Ingredient>(ingredientText));
-        setConsumption(parseCsv<Consumption>(consumptionText));
-        setInventory(parseCsv<Inventory>(inventoryText));
+        const loadedIngredients = parseDataset<Ingredient>("ingredientes", ingredientText, [
+          "ingrediente_id",
+          "nombre",
+          "proveedor",
+          "unidad_base",
+          "formato_compra",
+          "unidad_base_por_formato",
+        ]);
+        const loadedConsumption = parseDataset<Consumption>("consumo_historico", consumptionText, [
+          "sucursal",
+          "ingrediente_id",
+          "semana",
+          "consumo_unidad_base",
+        ]);
+        const loadedInventory = parseDataset<Inventory>("inventario_actual", inventoryText, [
+          "sucursal",
+          "ingrediente_id",
+          "stock_actual_unidad_base",
+        ]);
+        const loadedOrders = parseDataset<Order>("orden_compra_semana", orderText, [
+          "sucursal",
+          "ingrediente_id",
+          "cantidad_formatos",
+        ]);
+        setIngredients(loadedIngredients);
+        setConsumption(loadedConsumption);
+        setInventory(loadedInventory);
         setOrders(loadedOrders);
         setInitialOrders(loadedOrders);
       })
-      .catch((error: Error) => setLoadError(error.message))
+      .catch((error: unknown) => {
+        console.error("Fallo la carga de los datos del dashboard", error);
+        setLoadError(errorMessage(error, "No se pudieron cargar los datos del dashboard."));
+      })
       .finally(() => setLoading(false));
   }, []);
 
-  const lines = useMemo<Line[]>(() => {
+  const calculation = useMemo<{ lines: Line[]; issues: CalculationIssue[] }>(() => {
+    const issues: CalculationIssue[] = [];
+    const report = (key: string, label: string, reason: string) => {
+      issues.push({ key, label, reason });
+    };
+
     const ingredientMap = new Map(ingredients.map((item) => [item.ingrediente_id, item]));
     const history = new Map<string, number[]>();
     consumption.forEach((item) => {
       const key = rowKey(item);
+      const value = Number(item.consumo_unidad_base);
+      if (!Number.isFinite(value)) {
+        report(
+          `${key}::semana-${item.semana}`,
+          `${item.sucursal} · ${item.ingrediente_id}`,
+          `el consumo de la semana ${item.semana || "sin número"} no es numérico`,
+        );
+        return;
+      }
       const current = history.get(key) ?? [];
-      current.push(Number(item.consumo_unidad_base));
+      current.push(value);
       history.set(key, current);
     });
-    const orderMap = new Map(orders.map((item) => [rowKey(item), Number(item.cantidad_formatos)]));
-    return inventory.map((item) => {
+
+    const orderMap = new Map<string, number>();
+    orders.forEach((item) => {
       const key = rowKey(item);
-      const ingredient = ingredientMap.get(item.ingrediente_id)!;
-      const projected = projectNextWeek(history.get(key) ?? []);
+      const value = Number(item.cantidad_formatos);
+      if (!Number.isFinite(value) || value < 0) {
+        report(
+          key,
+          `${item.sucursal} · ${item.ingrediente_id}`,
+          "la cantidad de formatos pedida no es un número válido",
+        );
+        return;
+      }
+      orderMap.set(key, value);
+    });
+
+    const lines = inventory.flatMap<Line>((item) => {
+      const key = rowKey(item);
+      const label = `${item.sucursal} · ${item.ingrediente_id}`;
+      const ingredient = ingredientMap.get(item.ingrediente_id);
+      if (!ingredient) {
+        report(key, label, "el ingrediente no existe en el catálogo");
+        return [];
+      }
       const stock = Number(item.stock_actual_unidad_base);
-      const need = Math.max(0, projected - stock);
+      if (!Number.isFinite(stock)) {
+        report(key, label, "el stock actual no es numérico");
+        return [];
+      }
       const packSize = Number(ingredient.unidad_base_por_formato);
+      if (!Number.isFinite(packSize) || packSize <= 0) {
+        report(key, label, "el catálogo no define una unidad base por formato positiva");
+        return [];
+      }
+      const projected = projectNextWeek(history.get(key) ?? []);
+      const need = Math.max(0, projected - stock);
       const recommended = need > 0 ? Math.ceil(need / packSize) : 0;
       const ordered = orderMap.get(key) ?? 0;
       const orderedBase = ordered * packSize;
       const status: LineStatus =
         orderedBase + 0.0001 < need ? "critical" : ordered > recommended ? "warning" : "ok";
-      return {
+      return [{
         branch: item.sucursal,
         ingredientId: item.ingrediente_id,
         ingredient: ingredient.nombre,
@@ -233,9 +366,20 @@ export function Dashboard() {
         orderedBase,
         deltaBase: orderedBase - need,
         status,
-      };
+      }];
     });
+
+    return { lines, issues };
   }, [ingredients, consumption, inventory, orders]);
+
+  const lines = calculation.lines;
+  const calculationIssues = calculation.issues;
+
+  useEffect(() => {
+    calculationIssues.forEach((issue) => {
+      console.warn(`Línea excluida del cálculo (${issue.label}): ${issue.reason}`);
+    });
+  }, [calculationIssues]);
 
   const branches = useMemo(() => [...new Set(lines.map((line) => line.branch))], [lines]);
   const dataGaps = useMemo(() => {
@@ -316,24 +460,33 @@ export function Dashboard() {
   }
 
   function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+    const input = event.target;
+    const file = input.files?.[0];
     if (!file) return;
-    void file.text().then((text) => {
-      const next = parseCsv<Order>(text);
-      const valid = next.length > 0 && next.every((row) => row.sucursal && row.ingrediente_id && row.cantidad_formatos !== "");
-      if (!valid) {
-        setToast("El CSV no contiene las columnas esperadas.");
-        return;
-      }
-      const knownKeys = new Set(inventory.map(rowKey));
-      if (next.some((row) => !knownKeys.has(rowKey(row)))) {
-        setToast("El archivo contiene sucursales o ingredientes desconocidos.");
-        return;
-      }
-      setOrders(next);
-      setToast(`Orden actualizada: ${next.length} líneas procesadas.`);
-      event.target.value = "";
-    });
+    void file
+      .text()
+      .then((text) => {
+        const next = parseCsv<Order>(text);
+        const valid = next.length > 0 && next.every((row) => row.sucursal && row.ingrediente_id && row.cantidad_formatos !== "");
+        if (!valid) {
+          setToast("El CSV no contiene las columnas esperadas.");
+          return;
+        }
+        const knownKeys = new Set(inventory.map(rowKey));
+        if (next.some((row) => !knownKeys.has(rowKey(row)))) {
+          setToast("El archivo contiene sucursales o ingredientes desconocidos.");
+          return;
+        }
+        setOrders(next);
+        setToast(`Orden actualizada: ${next.length} líneas procesadas.`);
+      })
+      .catch((error: unknown) => {
+        console.error(`Fallo la lectura del CSV "${file.name}"`, error);
+        setToast("No se pudo leer el archivo CSV. Verifica el archivo e inténtalo de nuevo.");
+      })
+      .finally(() => {
+        input.value = "";
+      });
   }
 
   function downloadCorrectedOrder() {
@@ -341,12 +494,32 @@ export function Dashboard() {
       "sucursal,ingrediente_id,cantidad_formatos",
       ...lines.map((line) => `${line.branch},${line.ingredientId},${line.recommended}`),
     ].join("\n");
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    link.download = "orden_compra_corregida.csv";
-    link.click();
-    URL.revokeObjectURL(link.href);
+    let url = "";
+    try {
+      url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "orden_compra_corregida.csv";
+      link.click();
+    } catch (error) {
+      console.error("Fallo la descarga del CSV corregido", error);
+      setToast("No se pudo generar el CSV corregido. Revisa la consola del navegador.");
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+    }
   }
+
+  const downloadPdf = useCallback(
+    (pdfLines: Line[], options: { branchLabel: string; supplier?: string }) => {
+      try {
+        downloadOrderPdf(pdfLines, options);
+      } catch (error) {
+        console.error("Fallo la generación del PDF de la orden", error);
+        setToast("No se pudo generar el PDF de la orden. Revisa la consola del navegador.");
+      }
+    },
+    [],
+  );
 
   function localDataAnswer(question: string) {
     const mentions = findMentions(question, branches, ingredients);
@@ -458,21 +631,32 @@ export function Dashboard() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: cleanQuestion, context: buildChatContext(cleanQuestion) }),
       });
-      const payload = (await response.json()) as { answer?: string; code?: string; error?: string };
-      if (!response.ok || !payload.answer) throw new Error(payload.code ?? "chat_error");
-      setMessages((current) => [
-        ...current,
-        { role: "assistant", text: payload.answer!, source: "ai" },
-      ]);
+      let payload: { answer?: string; code?: string; error?: string } | null = null;
+      try {
+        payload = (await response.json()) as { answer?: string; code?: string; error?: string };
+      } catch (error) {
+        console.error("La respuesta de /api/chat no es JSON válido", error);
+      }
+      const answer = payload?.answer?.trim();
+      if (!response.ok || !answer) {
+        throw new ChatRequestError(
+          payload?.code ?? (response.ok ? "empty_response" : `http_${response.status}`),
+          payload?.error,
+        );
+      }
+      setMessages((current) => [...current, { role: "assistant", text: answer, source: "ai" }]);
     } catch (error) {
-      const code = error instanceof Error ? error.message : "chat_error";
+      console.error("Fallo la consulta al asistente con IA", error);
+      const code = error instanceof ChatRequestError ? error.code : "chat_error";
       const notice = code === "billing_required"
         ? "La cuenta de Gemini no tiene créditos disponibles. Agrega saldo en AI Studio o usa una clave de un proyecto con Free Tier."
         : code === "rate_limited"
           ? "Gemini alcanzó el límite temporal. Se usó el respaldo local; intenta de nuevo en un minuto."
           : code === "timeout"
             ? "Gemini tardó demasiado. Se usó el respaldo local; puedes volver a intentarlo."
-            : "Gemini no pudo responder. Se usó el respaldo local y puedes volver a intentarlo.";
+            : code === "not_configured"
+              ? "El asistente con IA no tiene clave configurada. Se usó el respaldo local."
+              : "Gemini no pudo responder. Se usó el respaldo local y puedes volver a intentarlo.";
       fallback(notice);
     } finally {
       setChatLoading(false);
@@ -492,13 +676,17 @@ export function Dashboard() {
       setLoginError("Revisa las credenciales de demostración.");
       return;
     }
-    sessionStorage.setItem("barrio-demo-access", "active");
+    if (!writeSessionValue("barrio-demo-access", "active")) {
+      setToast("No se pudo guardar la sesión de demostración; tendrás que ingresar otra vez al recargar.");
+    }
     setLoginError("");
     setDemoAccess(true);
   }
 
   function closeDemoSession() {
-    sessionStorage.removeItem("barrio-demo-access");
+    if (!removeSessionValue("barrio-demo-access")) {
+      setToast("No se pudo limpiar la sesión guardada en este navegador.");
+    }
     setLoginPassword("");
     setDemoAccess(false);
   }
@@ -620,7 +808,7 @@ export function Dashboard() {
             <button className="secondary-button" onClick={() => uploadRef.current?.click()}>↑ Cargar orden</button>
             <button
               className="primary-button"
-              onClick={() => downloadOrderPdf(visibleLines, { branchLabel: selectedTitle })}
+              onClick={() => downloadPdf(visibleLines, { branchLabel: selectedTitle })}
             >
               ↓ Descargar PDF
             </button>
@@ -662,13 +850,14 @@ export function Dashboard() {
                   </article>
                 </section>
 
-                {(dataGaps.missingOrders.length > 0 || dataGaps.orphanOrders.length > 0) && (
+                {(dataGaps.missingOrders.length > 0 || dataGaps.orphanOrders.length > 0 || calculationIssues.length > 0) && (
                   <section className="data-quality-banner" role="status">
                     <span>⌁</span>
                     <div>
                       <b>Calidad de datos: revisión necesaria</b>
                       <p>
                         {dataGaps.missingOrders.length} línea sin cantidad en la orden se interpreta como cero para detectar olvidos. {dataGaps.orphanOrders.length} línea de la orden no tiene inventario ni histórico y no se recomienda automáticamente.
+                        {calculationIssues.length > 0 && ` ${calculationIssues.length} línea quedó fuera del cálculo por datos inválidos.`}
                       </p>
                     </div>
                     <button onClick={() => setView("data")}>Revisar datos →</button>
@@ -681,7 +870,7 @@ export function Dashboard() {
                       <div><span className="section-kicker">MAPA DE RIESGO</span><h3>Estado por sucursal</h3></div>
                       <div className="legend"><span><i className="dot critical-dot" />Quiebre</span><span><i className="dot warning-dot" />Exceso</span></div>
                     </div>
-                    <BranchMap branches={branchStats} selected={selectedBranch} onSelect={setBranch} />
+                    <BranchMap branches={branchStats} selected={selectedBranch} onSelect={setBranch} onError={setToast} />
                   </article>
 
                   <article className="panel branch-panel">
@@ -745,7 +934,7 @@ export function Dashboard() {
                       </div>
                       <button
                         className="supplier-download"
-                        onClick={() => downloadOrderPdf(supplierLines, { branchLabel: selectedTitle, supplier })}
+                        onClick={() => downloadPdf(supplierLines, { branchLabel: selectedTitle, supplier })}
                       >
                         Descargar orden de {supplier} en PDF ↓
                       </button>
@@ -765,6 +954,11 @@ export function Dashboard() {
                 {dataGaps.orphanOrders.length > 0 && (
                   <div className="orphan-note">
                     <b>Línea sin respaldo:</b> {dataGaps.orphanOrders.map((item) => `${item.sucursal} · ${item.ingrediente_id} (${item.cantidad_formatos} formatos)`).join(", ")}. Agrega inventario e histórico antes de aprobarla.
+                  </div>
+                )}
+                {calculationIssues.length > 0 && (
+                  <div className="orphan-note" role="alert">
+                    <b>Datos inválidos excluidos del cálculo:</b> {calculationIssues.map((issue) => `${issue.label} (${issue.reason})`).join("; ")}. Corrige el origen de los datos para que estas líneas vuelvan a evaluarse.
                   </div>
                 )}
                 <div className="data-table-wrap">

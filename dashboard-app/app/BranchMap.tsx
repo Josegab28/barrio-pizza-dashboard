@@ -21,10 +21,12 @@ export function BranchMap({
   branches,
   selected,
   onSelect,
+  onError,
 }: {
   branches: BranchMapStat[];
   selected: string;
   onSelect: (branch: string) => void;
+  onError?: (message: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -33,53 +35,58 @@ export function BranchMap({
     let cancelled = false;
     let cleanup = () => {};
 
-    void import("leaflet").then((leaflet) => {
-      if (cancelled || !containerRef.current) return;
-      const L = leaflet.default;
-      const map = L.map(containerRef.current, {
-        zoomControl: false,
-        scrollWheelZoom: false,
-        attributionControl: true,
-      });
-      L.control.zoom({ position: "bottomright" }).addTo(map);
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: "© OpenStreetMap",
-      }).addTo(map);
-
-      const points: [number, number][] = [];
-      branches.forEach((branch) => {
-        const point = coordinates[branch.name];
-        if (!point) return;
-        points.push(point);
-        const level = branch.critical > 0 ? "critical" : branch.excess > 0 ? "warning" : "ok";
-        const active = selected === branch.name ? " active" : "";
-        const marker = L.marker(point, {
-          icon: L.divIcon({
-            className: "branch-pin-shell",
-            html: `<button class="branch-pin ${level}${active}" aria-label="Ver ${branch.name}"><span>⌂</span><b>${branch.critical + branch.excess}</b></button>`,
-            iconSize: [52, 52],
-            iconAnchor: [26, 48],
-          }),
+    void import("leaflet")
+      .then((leaflet) => {
+        if (cancelled || !containerRef.current) return;
+        const L = leaflet.default;
+        const map = L.map(containerRef.current, {
+          zoomControl: false,
+          scrollWheelZoom: false,
+          attributionControl: true,
+        });
+        L.control.zoom({ position: "bottomright" }).addTo(map);
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: "© OpenStreetMap",
         }).addTo(map);
 
-        marker.bindPopup(
-          `<div class="map-popup"><small>SUCURSAL</small><strong>${branch.name}</strong><div><span>${branch.critical} quiebres</span><span>${branch.excess} excesos</span></div><p class="map-stock"><small>STOCK ACTUAL</small><b>${branch.stockSummary}</b></p><button>Ver detalle →</button></div>`,
-          { closeButton: false, offset: [0, -34] },
-        );
-        marker.on("click", () => onSelect(branch.name));
-        if (selected === branch.name) marker.openPopup();
-      });
+        const points: [number, number][] = [];
+        branches.forEach((branch) => {
+          const point = coordinates[branch.name];
+          if (!point) return;
+          points.push(point);
+          const level = branch.critical > 0 ? "critical" : branch.excess > 0 ? "warning" : "ok";
+          const active = selected === branch.name ? " active" : "";
+          const marker = L.marker(point, {
+            icon: L.divIcon({
+              className: "branch-pin-shell",
+              html: `<button class="branch-pin ${level}${active}" aria-label="Ver ${branch.name}"><span>⌂</span><b>${branch.critical + branch.excess}</b></button>`,
+              iconSize: [52, 52],
+              iconAnchor: [26, 48],
+            }),
+          }).addTo(map);
 
-      if (points.length) map.fitBounds(points, { padding: [36, 36], maxZoom: 13 });
-      cleanup = () => map.remove();
-    });
+          marker.bindPopup(
+            `<div class="map-popup"><small>SUCURSAL</small><strong>${branch.name}</strong><div><span>${branch.critical} quiebres</span><span>${branch.excess} excesos</span></div><p class="map-stock"><small>STOCK ACTUAL</small><b>${branch.stockSummary}</b></p><button>Ver detalle →</button></div>`,
+            { closeButton: false, offset: [0, -34] },
+          );
+          marker.on("click", () => onSelect(branch.name));
+          if (selected === branch.name) marker.openPopup();
+        });
+
+        if (points.length) map.fitBounds(points, { padding: [36, 36], maxZoom: 13 });
+        cleanup = () => map.remove();
+      })
+      .catch((error: unknown) => {
+        console.error("No se pudo inicializar el mapa de sucursales", error);
+        if (!cancelled) onError?.("No se pudo cargar el mapa de sucursales.");
+      });
 
     return () => {
       cancelled = true;
       cleanup();
     };
-  }, [branches, selected, onSelect]);
+  }, [branches, selected, onSelect, onError]);
 
   return <div ref={containerRef} className="branch-map" aria-label="Mapa de sucursales" />;
 }
