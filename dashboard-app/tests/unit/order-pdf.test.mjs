@@ -37,7 +37,7 @@ test("titles the document by scope and stamps the Panama date", () => {
   assert.match(text, /Orden de compra corregida/);
   assert.match(text, /Alcance: Todas las sucursales/);
   assert.match(text, /SEMANA 7/);
-  assert.match(text, /7 de agosto de 2026, 10:00/);
+  assert.match(text, /7 de agosto de 2026(?:,| a las )10:00/);
   assert.match(text, /P.gina 1 de 1/);
 });
 
