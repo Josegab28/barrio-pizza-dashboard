@@ -3,7 +3,7 @@ import {
   getDemoPassword,
   isSameOrigin,
   verifyPassword,
-} from "../../../lib/session";
+} from "../../../lib/session.ts";
 
 const MAX_PASSWORD_LENGTH = 200;
 

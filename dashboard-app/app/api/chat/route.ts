@@ -1,4 +1,4 @@
-import { hasValidSession, isSameOrigin } from "../../lib/session";
+import { hasValidSession, isSameOrigin } from "../../lib/session.ts";
 
 const MAX_QUESTION_LENGTH = 280;
 const MAX_CONTEXT_LENGTH = 14_000;

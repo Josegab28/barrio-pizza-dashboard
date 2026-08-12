@@ -1,4 +1,4 @@
-import { clearSessionCookie, isSameOrigin } from "../../../lib/session";
+import { clearSessionCookie, isSameOrigin } from "../../../lib/session.ts";
 
 export function POST(request: Request) {
   if (!isSameOrigin(request)) {
