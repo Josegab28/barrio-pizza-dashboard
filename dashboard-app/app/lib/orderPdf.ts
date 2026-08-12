@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import { groupBySupplier, sumRecommended } from "./orderLines.ts";
+import { formatDateTime, slugify } from "./text.ts";
 
 export type PdfOrderLine = {
   branch: string;
@@ -26,32 +28,16 @@ const COLORS = {
   line: [222, 219, 209] as [number, number, number],
 };
 
-function safeFilename(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "");
-}
-
-function formatDate(date: Date) {
-  return new Intl.DateTimeFormat("es-PA", {
-    dateStyle: "long",
-    timeStyle: "short",
-    timeZone: "America/Panama",
-  }).format(date);
-}
-
 export function buildOrderPdf(allLines: PdfOrderLine[], options: PdfOptions) {
   const generatedAt = options.generatedAt ?? new Date();
   const purchaseLines = allLines.filter((line) => line.recommended > 0);
-  const suppliers = [...new Set(purchaseLines.map((line) => line.supplier))].sort((a, b) =>
-    a.localeCompare(b, "es"),
+  const supplierGroups = groupBySupplier(
+    allLines,
+    (a, b) => a.branch.localeCompare(b.branch, "es") || a.ingredient.localeCompare(b.ingredient, "es"),
   );
   const changedLines = allLines.filter((line) => line.ordered !== line.recommended).length;
   const removedLines = allLines.filter((line) => line.ordered > 0 && line.recommended === 0).length;
-  const totalFormats = purchaseLines.reduce((sum, line) => sum + line.recommended, 0);
+  const totalFormats = sumRecommended(purchaseLines);
   const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -78,7 +64,7 @@ export function buildOrderPdf(allLines: PdfOrderLine[], options: PdfOptions) {
   doc.setFont("helvetica", "normal");
   doc.setTextColor(196, 210, 203);
   doc.setFontSize(7);
-  doc.text(formatDate(generatedAt), pageWidth - margin, 21.5, { align: "right" });
+  doc.text(formatDateTime(generatedAt), pageWidth - margin, 21.5, { align: "right" });
 
   doc.setTextColor(...COLORS.ink);
   doc.setFont("helvetica", "bold");
@@ -90,7 +76,7 @@ export function buildOrderPdf(allLines: PdfOrderLine[], options: PdfOptions) {
   doc.text(`Alcance: ${options.branchLabel}. Cantidades expresadas en formatos completos.`, margin, 63);
 
   const cards = [
-    ["PROVEEDORES", String(suppliers.length)],
+    ["PROVEEDORES", String(supplierGroups.length)],
     ["LÍNEAS A COMPRAR", String(purchaseLines.length)],
     ["FORMATOS TOTALES", String(totalFormats)],
     ["AJUSTES", String(changedLines)],
@@ -112,17 +98,14 @@ export function buildOrderPdf(allLines: PdfOrderLine[], options: PdfOptions) {
   });
 
   let cursorY = 99;
-  suppliers.forEach((supplier) => {
-    const supplierLines = purchaseLines
-      .filter((line) => line.supplier === supplier)
-      .sort((a, b) => a.branch.localeCompare(b.branch, "es") || a.ingredient.localeCompare(b.ingredient, "es"));
+  supplierGroups.forEach(([supplier, supplierLines]) => {
     const estimatedSectionHeight = 18 + (supplierLines.length + 1) * 9.6;
     if (cursorY + estimatedSectionHeight > pageHeight - 17) {
       doc.addPage();
       cursorY = 18;
     }
 
-    const supplierFormats = supplierLines.reduce((sum, line) => sum + line.recommended, 0);
+    const supplierFormats = sumRecommended(supplierLines);
     doc.setFillColor(...COLORS.ink);
     doc.roundedRect(margin, cursorY, pageWidth - margin * 2, 12, 2.5, 2.5, "F");
     doc.setTextColor(255, 255, 255);
@@ -215,6 +198,6 @@ export function buildOrderPdf(allLines: PdfOrderLine[], options: PdfOptions) {
 
 export function downloadOrderPdf(lines: PdfOrderLine[], options: PdfOptions) {
   const doc = buildOrderPdf(lines, options);
-  const suffix = options.supplier ? `-${safeFilename(options.supplier)}` : "";
+  const suffix = options.supplier ? `-${slugify(options.supplier)}` : "";
   doc.save(`orden-compra-corregida${suffix}.pdf`);
 }
