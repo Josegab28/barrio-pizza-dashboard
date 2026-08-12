@@ -12,7 +12,7 @@ Dashboard administrativo para revisar automáticamente las órdenes semanales de
 - Asistente en español conectado a la API de Gemini, limitado a los datos calculados por el dashboard y con respaldo local automático.
 - Revisión explícita de calidad de datos: líneas omitidas, líneas sin inventario/histórico y semanas atípicas.
 - Diseño adaptable para computador, tableta y móvil.
-- Pantalla de acceso visual para la demostración, con sesión temporal por pestaña y cierre de sesión; no sustituye autenticación de producción.
+- Pantalla de acceso para la demostración validada en el servidor, con cookie de sesión firmada (HttpOnly) y cierre de sesión; no sustituye autenticación de producción.
 
 ## Cómo correrlo
 
@@ -27,6 +27,14 @@ npm run dev
 Abrir `http://localhost:3000`.
 
 La clave nunca se envía al navegador ni debe subirse a GitHub. En la versión publicada se configura como variable secreta del sitio.
+
+Variables de entorno (ver `dashboard-app/.env.example`):
+
+- `GEMINI_API_KEY`: clave del asistente; sin ella el chat usa el respaldo local.
+- `DEMO_ACCESS_PASSWORD`: contraseña del acceso demo. Se valida solo en el servidor; si no está configurada, la pantalla de acceso queda deshabilitada.
+- `DEMO_SESSION_SECRET`: clave para firmar la cookie de sesión demo (opcional; por defecto usa `DEMO_ACCESS_PASSWORD`).
+
+El endpoint `/api/chat` exige una sesión demo válida y rechaza solicitudes de otro origen, para que la cuota de Gemini no quede abierta a cualquiera.
 
 Para validar la versión de producción:
 
