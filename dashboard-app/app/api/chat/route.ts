@@ -1,3 +1,5 @@
+import { hasValidSession, isSameOrigin } from "../../lib/session.ts";
+
 const MAX_QUESTION_LENGTH = 280;
 const MAX_CONTEXT_LENGTH = 14_000;
 const MAX_REQUESTS_PER_MINUTE = 8;
@@ -67,6 +69,13 @@ function extractOutputText(payload: Record<string, unknown>) {
 }
 
 export async function POST(request: Request) {
+  if (!isSameOrigin(request)) {
+    return json({ code: "forbidden_origin", error: "Origen no permitido." }, 403);
+  }
+  if (!(await hasValidSession(request))) {
+    return json({ code: "unauthorized", error: "Se requiere una sesión activa." }, 401);
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return json(
@@ -142,15 +151,15 @@ export async function POST(request: Request) {
     if (!response.ok) {
       const detail =
         typeof payload.error === "object" && payload.error
-          ? String((payload.error as { message?: unknown }).message ?? "Error de Gemini")
-          : "Error de Gemini";
+          ? String((payload.error as { message?: unknown }).message ?? "")
+          : "";
       const billingRequired = /prepayment credits are depleted/i.test(detail);
       return json(
         {
           code: billingRequired ? "billing_required" : "upstream_error",
           error: billingRequired
             ? "La cuenta de Gemini no tiene créditos disponibles."
-            : detail,
+            : "El asistente con IA no pudo responder.",
         },
         billingRequired ? 402 : response.status >= 500 ? 502 : 400,
       );

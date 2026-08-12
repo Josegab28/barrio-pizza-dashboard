@@ -139,7 +139,6 @@ function projectNextWeek(values: number[]) {
 }
 
 const DEMO_EMAIL = "admin@barriopizza.com";
-const DEMO_PASSWORD = "barrio2026";
 
 export function Dashboard() {
   const [ingredients, setIngredients] = useState<Ingredient[]>([]);
@@ -159,6 +158,7 @@ export function Dashboard() {
   const [loginEmail, setLoginEmail] = useState(DEMO_EMAIL);
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginPending, setLoginPending] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: "assistant",
@@ -169,8 +169,21 @@ export function Dashboard() {
   const aiRequestCount = useRef(0);
 
   useEffect(() => {
-    setDemoAccess(sessionStorage.getItem("barrio-demo-access") === "active");
-    setDemoAccessReady(true);
+    let cancelled = false;
+    fetch("/api/auth/session", { credentials: "same-origin" })
+      .then((response) => (response.ok ? response.json() : { authenticated: false }))
+      .then((payload: { authenticated?: boolean }) => {
+        if (!cancelled) setDemoAccess(payload.authenticated === true);
+      })
+      .catch(() => {
+        if (!cancelled) setDemoAccess(false);
+      })
+      .finally(() => {
+        if (!cancelled) setDemoAccessReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -455,6 +468,7 @@ export function Dashboard() {
       aiRequestCount.current += 1;
       const response = await fetch("/api/chat", {
         method: "POST",
+        credentials: "same-origin",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ question: cleanQuestion, context: buildChatContext(cleanQuestion) }),
       });
@@ -466,6 +480,11 @@ export function Dashboard() {
       ]);
     } catch (error) {
       const code = error instanceof Error ? error.message : "chat_error";
+      if (code === "unauthorized") {
+        setDemoAccess(false);
+        setToast("La sesión demo expiró. Vuelve a ingresar.");
+        return;
+      }
       const notice = code === "billing_required"
         ? "La cuenta de Gemini no tiene créditos disponibles. Agrega saldo en AI Studio o usa una clave de un proyecto con Free Tier."
         : code === "rate_limited"
@@ -486,19 +505,43 @@ export function Dashboard() {
     setChatInput("");
   }
 
-  function submitDemoLogin(event: React.FormEvent) {
+  async function submitDemoLogin(event: React.FormEvent) {
     event.preventDefault();
-    if (plainText(loginEmail.trim()) !== DEMO_EMAIL || loginPassword !== DEMO_PASSWORD) {
+    if (loginPending) return;
+    if (plainText(loginEmail.trim()) !== DEMO_EMAIL) {
       setLoginError("Revisa las credenciales de demostración.");
       return;
     }
-    sessionStorage.setItem("barrio-demo-access", "active");
-    setLoginError("");
-    setDemoAccess(true);
+
+    setLoginPending(true);
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ password: loginPassword }),
+      });
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { code?: string };
+        setLoginError(
+          payload.code === "not_configured"
+            ? "El acceso demo no está configurado en el servidor (define DEMO_ACCESS_PASSWORD)."
+            : "Revisa las credenciales de demostración.",
+        );
+        return;
+      }
+      setLoginPassword("");
+      setLoginError("");
+      setDemoAccess(true);
+    } catch {
+      setLoginError("No fue posible validar el acceso. Intenta de nuevo.");
+    } finally {
+      setLoginPending(false);
+    }
   }
 
   function closeDemoSession() {
-    sessionStorage.removeItem("barrio-demo-access");
+    void fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" }).catch(() => {});
     setLoginPassword("");
     setDemoAccess(false);
   }
@@ -537,7 +580,7 @@ export function Dashboard() {
           </div>
         </section>
         <section className="demo-login-panel">
-          <form className="demo-login-card" onSubmit={submitDemoLogin}>
+          <form className="demo-login-card" onSubmit={(event) => void submitDemoLogin(event)}>
             <span className="demo-pill">ACCESO DE DEMOSTRACIÓN</span>
             <h2>Bienvenido</h2>
             <p>Ingresa con las credenciales del entorno de prueba.</p>
@@ -563,11 +606,11 @@ export function Dashboard() {
               />
             </label>
             {loginError && <div className="demo-login-error" role="alert">{loginError}</div>}
-            <button type="submit">Entrar al dashboard →</button>
+            <button type="submit" disabled={loginPending}>Entrar al dashboard →</button>
             <div className="demo-credentials">
               <small>CREDENCIALES DEMO</small>
               <span>{DEMO_EMAIL}</span>
-              <span>Contraseña: {DEMO_PASSWORD}</span>
+              <span>Contraseña: definida en el servidor</span>
             </div>
             <p className="demo-disclaimer">Acceso visual para fines de demostración. No reemplaza un sistema de autenticación de producción.</p>
           </form>

@@ -2,15 +2,24 @@ import assert from "node:assert/strict";
 import test, { afterEach, beforeEach } from "node:test";
 
 const { POST } = await import("../../app/api/chat/route.ts");
+const { createSessionCookie } = await import("../../app/lib/session.ts");
 
 const originalFetch = globalThis.fetch;
 let ip = 0;
+
+process.env.DEMO_SESSION_SECRET = "test-session-secret";
+const sessionCookie = (await createSessionCookie()).split(";")[0];
 
 function chatRequest(body = { question: "¿Dónde falta mozzarella?", context: "{}" }, init = {}) {
   ip += 1;
   return new Request("http://localhost/api/chat", {
     method: "POST",
-    headers: { "content-type": "application/json", "cf-connecting-ip": `10.0.0.${ip}`, ...(init.headers ?? {}) },
+    headers: {
+      "content-type": "application/json",
+      "cf-connecting-ip": `10.0.0.${ip}`,
+      cookie: sessionCookie,
+      ...(init.headers ?? {}),
+    },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
 }
@@ -42,6 +51,26 @@ afterEach(() => {
   globalThis.fetch = originalFetch;
   delete process.env.GEMINI_API_KEY;
   delete process.env.GEMINI_MODEL;
+});
+
+test("rejects the request when there is no demo session", async () => {
+  const response = await POST(
+    new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ question: "hola", context: "{}" }),
+    }),
+  );
+
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).code, "unauthorized");
+});
+
+test("rejects a request coming from another origin", async () => {
+  const response = await POST(chatRequest(undefined, { headers: { origin: "https://attacker.example" } }));
+
+  assert.equal(response.status, 403);
+  assert.equal((await response.json()).code, "forbidden_origin");
 });
 
 test("rejects the request when the Gemini key is not configured", async () => {
@@ -139,16 +168,22 @@ test("surfaces depleted Gemini credits as a billing error", async () => {
   });
 });
 
-test("maps upstream failures to client and server error codes", async () => {
+test("maps upstream failures to client and server error codes without leaking their detail", async () => {
   stubUpstream(upstream({ error: { message: "API key not valid" } }, 400));
   const clientError = await POST(chatRequest());
   assert.equal(clientError.status, 400);
-  assert.deepEqual(await clientError.json(), { code: "upstream_error", error: "API key not valid" });
+  assert.deepEqual(await clientError.json(), {
+    code: "upstream_error",
+    error: "El asistente con IA no pudo responder.",
+  });
 
   stubUpstream(upstream({}, 503));
   const serverError = await POST(chatRequest());
   assert.equal(serverError.status, 502);
-  assert.deepEqual(await serverError.json(), { code: "upstream_error", error: "Error de Gemini" });
+  assert.deepEqual(await serverError.json(), {
+    code: "upstream_error",
+    error: "El asistente con IA no pudo responder.",
+  });
 });
 
 test("reports a network failure as an unavailable assistant", async () => {
@@ -198,7 +233,11 @@ test("identifies the client by the first forwarded address when Cloudflare is ab
   const request = () =>
     new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "content-type": "application/json", "x-forwarded-for": " 198.51.100.4 , 10.0.0.1" },
+      headers: {
+        "content-type": "application/json",
+        cookie: sessionCookie,
+        "x-forwarded-for": " 198.51.100.4 , 10.0.0.1",
+      },
       body: JSON.stringify({ question: "hola", context: "{}" }),
     });
 
@@ -214,7 +253,7 @@ test("falls back to a local client id when no address header is present", async 
   const response = await POST(
     new Request("http://localhost/api/chat", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", cookie: sessionCookie },
       body: JSON.stringify({ question: "hola", context: "{}" }),
     }),
   );

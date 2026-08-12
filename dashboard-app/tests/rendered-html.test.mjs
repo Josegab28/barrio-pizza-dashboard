@@ -14,17 +14,43 @@ async function render(path = "/", init = {}) {
   );
 }
 
-test("keeps the Gemini key on the server and falls back safely when it is absent", async () => {
+test("requires an authenticated demo session before reaching the AI endpoint", async () => {
   const response = await render("/api/chat", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ question: "¿Dónde falta mozzarella?", context: "Datos de prueba" }),
   });
-  assert.equal(response.status, 503);
+  assert.equal(response.status, 401);
   assert.deepEqual(await response.json(), {
-    code: "not_configured",
-    error: "El asistente con IA todavía no tiene una clave configurada.",
+    code: "unauthorized",
+    error: "Se requiere una sesión activa.",
   });
+});
+
+test("rejects cross-origin requests to the AI endpoint", async () => {
+  const response = await render("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://attacker.example" },
+    body: JSON.stringify({ question: "¿Dónde falta mozzarella?", context: "Datos de prueba" }),
+  });
+  assert.equal(response.status, 403);
+});
+
+test("blocks the demo login when the server password is not configured", async () => {
+  const response = await render("/api/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ password: "barrio2026" }),
+  });
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, "not_configured");
+});
+
+test("sends hardening headers with the dashboard shell", async () => {
+  const response = await render();
+  assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(response.headers.get("x-frame-options"), "DENY");
 });
 
 test("server-renders the Barrio dashboard shell", async () => {
@@ -64,7 +90,8 @@ test("keeps purchasing logic, AI guardrails, PDF export, data and social asset i
   assert.match(dashboard, /downloadOrderPdf/);
   assert.match(dashboard, /buildChatContext/);
   assert.match(dashboard, /ACCESO DE DEMOSTRACIÓN/);
-  assert.match(dashboard, /barrio-demo-access/);
+  assert.match(dashboard, /\/api\/auth\/session/);
+  assert.doesNotMatch(dashboard, /barrio2026/);
   assert.match(dashboard, /Cerrar sesión demo/);
   assert.doesNotMatch(dashboard, /Cómo se toma cada decisión/);
   assert.doesNotMatch(dashboard, /label: "Método"/);
